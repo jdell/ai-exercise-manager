@@ -23,7 +23,7 @@ const MIN_REFLECTION = 40;
 export default function ExerciseWorkspace() {
   const { exerciseId } = useParams<{ exerciseId: string }>();
   const { session } = useSession();
-  const { submissions } = useSubmissions();
+  const { submissions, loading } = useSubmissions();
   const progress = useStudentProgress(session?.id, submissions);
 
   const exercise = exerciseId ? EXERCISE_BY_ID[exerciseId] : undefined;
@@ -48,21 +48,24 @@ export default function ExerciseWorkspace() {
   const abortRef = useRef<AbortController | null>(null);
   const seeded = useRef(false);
 
-  // Seed the editor once: from the last attempt if there is one, else the
-  // exercise's starter scaffold.
+  // Seed the editor once submissions have loaded: from the last attempt if
+  // there is one, else the exercise's starter scaffold.
   useEffect(() => {
-    if (seeded.current || !exercise) return;
-    if (entry === undefined) return; // progress not resolved yet
+    if (seeded.current || !exercise || loading) return;
     seeded.current = true;
     setPrompt(latest?.prompt ?? exercise.starterPrompt);
     setReflection(latest?.status === 'needs_revision' ? (latest.reflection ?? '') : '');
-  }, [exercise, entry, latest]);
+  }, [exercise, loading, latest]);
 
   useEffect(() => () => abortRef.current?.abort(), []);
 
   if (!exercise) return <Navigate to="/" replace />;
   if (!session) return <Navigate to="/signin" replace />;
-  if (entry && entry.state === 'locked') return <Navigate to="/" replace />;
+
+  // The lock is derived from submissions, so it is meaningless until they have
+  // loaded — checking early would bounce a deep link to an unlocked exercise.
+  if (loading) return <div className="h-96 animate-pulse rounded-xl bg-ink-100" />;
+  if (entry?.state === 'locked') return <Navigate to="/" replace />;
 
   const state = entry?.state ?? 'available';
   const readOnly = state === 'in_review' || state === 'approved';

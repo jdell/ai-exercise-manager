@@ -1,7 +1,7 @@
 import { createContext, useCallback, useContext, useEffect, useMemo, useState } from 'react';
 import type { ReactNode } from 'react';
 import type { Role, Session } from '../types';
-import { newId, upsertStudent } from '../lib/store';
+import { newId, touchStudent, upsertStudent } from '../lib/store';
 
 const STORAGE_KEY = 'aiem:session:v1';
 
@@ -34,14 +34,11 @@ export function SessionProvider({ children }: { children: ReactNode }) {
   }, [session]);
 
   // Keep the student's presence record fresh so teachers see who is active.
+  // touchStudent rather than upsertStudent so a returning student's createdAt
+  // survives; the record itself is created by signIn.
   useEffect(() => {
     if (session?.role !== 'student') return;
-    void upsertStudent({
-      id: session.id,
-      name: session.name,
-      createdAt: Date.now(),
-      lastSeenAt: Date.now(),
-    });
+    void touchStudent(session.id, session.name);
   }, [session]);
 
   const signIn = useCallback(async (role: Role, name: string, passcode?: string) => {

@@ -93,11 +93,30 @@ export async function upsertStudent(student: Student): Promise<void> {
   const db = getDb();
   if (!db) {
     const data = readLocal();
-    data.students[student.id] = { ...data.students[student.id], ...student };
+    const existing = data.students[student.id];
+    // Preserve the original createdAt for a returning student.
+    data.students[student.id] = {
+      ...student,
+      createdAt: existing?.createdAt ?? student.createdAt,
+    };
     writeLocal(data);
     return;
   }
   await update(ref(db, `students/${student.id}`), student);
+}
+
+/** Refresh presence without touching a returning student's `createdAt`. */
+export async function touchStudent(id: string, name: string): Promise<void> {
+  const db = getDb();
+  if (!db) {
+    const data = readLocal();
+    const existing = data.students[id];
+    if (!existing) return;
+    data.students[id] = { ...existing, name, lastSeenAt: Date.now() };
+    writeLocal(data);
+    return;
+  }
+  await update(ref(db, `students/${id}`), { name, lastSeenAt: Date.now() });
 }
 
 export async function saveSubmission(submission: Submission): Promise<void> {
