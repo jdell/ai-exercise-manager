@@ -1,6 +1,5 @@
 import { Link } from 'react-router-dom';
-import { computeProgress, useStudents, useSubmissions } from '../hooks/useData';
-import { EXERCISES } from '../data/exercises';
+import { computeProgress, useExercises, useStudents, useSubmissions } from '../hooks/useData';
 import { EmptyState, Panel, relativeTime, scoreTone } from '../components/ui';
 import type { ExerciseState } from '../types';
 
@@ -15,15 +14,16 @@ const CELL: Record<ExerciseState, { className: string; glyph: string; title: str
 export default function ClassProgress() {
   const { students, loading } = useStudents();
   const { submissions } = useSubmissions();
+  const { exercises } = useExercises();
 
   const rows = students.map((student) => {
-    const progress = computeProgress(student.uid, submissions);
-    const approved = EXERCISES.filter((e) => progress.get(e.id)?.state === 'approved').length;
-    const scores = EXERCISES.map((e) => progress.get(e.id)?.best ?? 0).filter((s) => s > 0);
+    const progress = computeProgress(student.uid, submissions, exercises);
+    const approved = exercises.filter((e) => progress.get(e.id)?.state === 'approved').length;
+    const scores = exercises.map((e) => progress.get(e.id)?.best ?? 0).filter((s) => s > 0);
     const average = scores.length
       ? Math.round((scores.reduce((a, b) => a + b, 0) / scores.length) * 10) / 10
       : 0;
-    const pending = EXERCISES.filter((e) => progress.get(e.id)?.state === 'in_review').length;
+    const pending = exercises.filter((e) => progress.get(e.id)?.state === 'in_review').length;
     return { student, progress, approved, average, pending };
   });
 
@@ -51,7 +51,7 @@ export default function ClassProgress() {
               <thead>
                 <tr className="border-b border-ink-200 text-left">
                   <th className="py-2.5 pr-4 font-medium text-ink-500">Student</th>
-                  {EXERCISES.map((e) => (
+                  {exercises.map((e) => (
                     <th
                       key={e.id}
                       className="px-1.5 py-2.5 text-center text-xs font-medium text-ink-500"
@@ -70,11 +70,11 @@ export default function ClassProgress() {
                     <td className="py-2.5 pr-4">
                       <span className="font-medium text-ink-900">{student.displayName}</span>
                       <span className="ml-2 text-xs text-ink-400">
-                        {approved}/{EXERCISES.length}
+                        {approved}/{exercises.length}
                         {pending > 0 && <span className="ml-1 text-amber-600">· {pending} in review</span>}
                       </span>
                     </td>
-                    {EXERCISES.map((e) => {
+                    {exercises.map((e) => {
                       const entry = progress.get(e.id);
                       const state = entry?.state ?? 'locked';
                       const cell = CELL[state];

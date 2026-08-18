@@ -21,6 +21,7 @@ const NAV: Record<Role, { to: string; label: string }[]> = {
   teacher: [
     { to: '/teacher', label: 'Review queue' },
     { to: '/teacher/class', label: 'Class progress' },
+    { to: '/teacher/exercises', label: 'Exercises' },
     { to: '/evaluator', label: 'Evaluator console' },
   ],
 };

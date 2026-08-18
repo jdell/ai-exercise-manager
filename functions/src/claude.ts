@@ -1,6 +1,6 @@
 import Anthropic from '@anthropic-ai/sdk';
 import type { Evaluation, Exercise, RubricKey, Submission } from '../../src/types';
-import { weightedTotal } from '../../src/data/rubric';
+import { effectiveWeights, weightedTotal } from '../../src/data/rubric';
 import {
   EVALUATION_SCHEMA,
   buildEvaluationRequest,
@@ -96,8 +96,12 @@ export async function evaluateSubmission(
   exercise: Exercise,
   submission: Pick<Submission, 'prompt' | 'reflection' | 'output' | 'attempt'>,
   priorAttempts: Submission[] = [],
+  onDelta?: (chunk: string) => void,
 ): Promise<Evaluation> {
-  const message = await client(apiKey).messages.create({
+  // Streamed so the student can watch the evaluation arrive. The structured
+  // output still lands as one JSON document; the deltas are fragments of it,
+  // which is why the client previews them with a lenient reader.
+  const stream = client(apiKey).messages.stream({
     model: DEFAULT_MODEL,
     max_tokens: 16000,
     system: [
@@ -124,6 +128,10 @@ export async function evaluateSubmission(
     ],
   });
 
+  if (onDelta) stream.on('text', onDelta);
+
+  const message = await stream.finalMessage();
+
   if (message.stop_reason === 'refusal') {
     throw new RefusalError(message.stop_details?.category, message.stop_details?.explanation);
   }
@@ -146,9 +154,15 @@ export async function evaluateSubmission(
     growth: clampScore(parsed.growth),
   };
 
+  // The exercise's own weights, not the rubric defaults — a teacher can
+  // reweight a custom exercise. Recorded on the evaluation so an attempt graded
+  // before a later reweighting still explains its own total.
+  const weights = effectiveWeights(exercise.rubricWeights);
+
   return {
     scores,
-    weightedTotal: weightedTotal(scores),
+    weightedTotal: weightedTotal(scores, weights),
+    weights,
     summary: parsed.summary ?? '',
     strengths: Array.isArray(parsed.strengths) ? parsed.strengths : [],
     improvements: Array.isArray(parsed.improvements) ? parsed.improvements : [],

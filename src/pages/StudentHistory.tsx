@@ -1,13 +1,13 @@
 import { Link } from 'react-router-dom';
 import { useSession } from '../context/SessionContext';
-import { useSubmissions } from '../hooks/useData';
-import { EXERCISE_BY_ID } from '../data/exercises';
+import { useExercises, useSubmissions } from '../hooks/useData';
 import { EmptyState, Panel, RubricBreakdown, StatusBadge, relativeTime, scoreTone } from '../components/ui';
 import { FeedbackList } from './ExerciseWorkspace';
 
 export default function StudentHistory() {
   const { session } = useSession();
   const { submissions, loading } = useSubmissions();
+  const { byId } = useExercises();
   const mine = submissions.filter((s) => s.studentId === session?.id);
 
   return (
@@ -31,7 +31,7 @@ export default function StudentHistory() {
 
       <div className="space-y-4">
         {mine.map((s) => {
-          const exercise = EXERCISE_BY_ID[s.exerciseId];
+          const exercise = byId[s.exerciseId];
           const score = s.review?.finalScore ?? s.evaluation?.weightedTotal;
           return (
             <Panel
@@ -56,11 +56,18 @@ export default function StudentHistory() {
                     scores={s.evaluation.scores}
                     overrides={s.review?.overrides}
                     rationale={s.evaluation.rationale}
+                    weights={s.evaluation.weights}
                   />
                   <div className="grid gap-4 sm:grid-cols-2">
                     <FeedbackList title="Strengths" items={s.evaluation.strengths} tone="emerald" />
                     <FeedbackList title="Next time" items={s.evaluation.improvements} tone="amber" />
                   </div>
+                  <Link
+                    to={`/submission/${s.id}`}
+                    className="inline-block text-xs font-medium text-indigo-600 hover:underline"
+                  >
+                    Revision history and full feedback →
+                  </Link>
                   {s.review?.comment && (
                     <div className="rounded-lg border border-indigo-200 bg-indigo-50/60 p-3.5">
                       <p className="mb-1 text-xs font-semibold tracking-wide text-indigo-800 uppercase">
@@ -71,9 +78,17 @@ export default function StudentHistory() {
                   )}
                 </div>
               ) : (
-                <p className="text-sm text-ink-500">
-                  {s.status === 'error' ? s.error : 'No evaluation recorded for this attempt.'}
-                </p>
+                <div className="space-y-3">
+                  <p className="text-sm text-ink-500">
+                    {s.status === 'error' ? s.error : 'No evaluation recorded for this attempt.'}
+                  </p>
+                  <Link
+                    to={`/submission/${s.id}`}
+                    className="inline-block text-xs font-medium text-indigo-600 hover:underline"
+                  >
+                    Open this attempt →
+                  </Link>
+                </div>
               )}
             </Panel>
           );

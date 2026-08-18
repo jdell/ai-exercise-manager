@@ -1,5 +1,5 @@
 import type { Exercise, RubricKey, Submission } from '../types';
-import { PASSING_SCORE, RUBRIC, RUBRIC_KEYS } from '../data/rubric';
+import { PASSING_SCORE, RUBRIC, RUBRIC_KEYS, effectiveWeights } from '../data/rubric';
 
 /**
  * Everything the Claude Evaluator sends to the model, minus the API call.
@@ -87,10 +87,24 @@ export interface RawEvaluation {
 }
 
 export function buildEvaluatorSystemPrompt(exercise: Exercise): string {
+  // Weights come from the exercise, not the rubric defaults — a teacher can
+  // reweight a custom exercise, and the evaluator must be told the same
+  // weights the app will score with.
+  const weights = effectiveWeights(exercise.rubricWeights);
   const rubricText = RUBRIC.map(
     (d) =>
-      `### ${d.label} — ${Math.round(d.weight * 100)}% of the final score\n${d.description}\n${d.criteria}`,
+      `### ${d.label} — ${Math.round(weights[d.key] * 100)}% of the final score\n${d.description}\n${d.criteria}`,
   ).join('\n\n');
+
+  const examples = [
+    exercise.goodExample && `A prompt that would satisfy this exercise:\n${exercise.goodExample}`,
+    exercise.badExample &&
+      `A prompt that would NOT satisfy it, and is worth recognising:\n${exercise.badExample}`,
+  ].filter(Boolean);
+
+  const examplesSection = examples.length
+    ? `\n\nWorked examples for calibration. These set the bar; do not quote them back to the student as if they wrote them.\n\n${examples.join('\n\n')}`
+    : '';
 
   return `You are the Claude Evaluator for a prompt-engineering course. You grade one student submission at a time against a fixed rubric and return structured scores.
 
@@ -110,7 +124,7 @@ Success criteria for this exercise:
 ${exercise.successCriteria.map((c) => `- ${c}`).join('\n')}
 
 Exercise-specific grading guidance (this overrides the general rubric where they conflict):
-${exercise.evaluatorNotes}
+${exercise.evaluatorNotes || 'None supplied. Grade against the success criteria above and the general rubric.'}${examplesSection}
 
 ## The rubric
 

@@ -69,12 +69,56 @@ export const RUBRIC_KEYS: RubricKey[] = RUBRIC.map((d) => d.key);
 /** Score at or above which a submission is considered to clear the bar. */
 export const PASSING_SCORE = 75;
 
-/** Weighted 0–100 total. Missing or out-of-range dimensions are clamped to 0–100. */
-export function weightedTotal(scores: Partial<Record<RubricKey, number>>): number {
-  const total = RUBRIC.reduce((sum, dim) => {
-    const raw = scores[dim.key];
+/** The rubric's default weights, as a plain map. */
+export const DEFAULT_WEIGHTS: Record<RubricKey, number> = Object.fromEntries(
+  RUBRIC.map((d) => [d.key, d.weight]),
+) as Record<RubricKey, number>;
+
+/**
+ * The weights one exercise is scored with: RUBRIC's defaults, with any
+ * per-exercise overrides applied, normalised to sum to 1.
+ *
+ * Normalising rather than rejecting means a teacher who types 50/30/20/10 in
+ * the exercise builder gets the ratio they asked for, and a total that is
+ * still on a 0–100 scale.
+ */
+export function effectiveWeights(
+  overrides?: Partial<Record<RubricKey, number>>,
+): Record<RubricKey, number> {
+  const merged = { ...DEFAULT_WEIGHTS };
+  for (const key of RUBRIC_KEYS) {
+    const override = overrides?.[key];
+    if (typeof override === 'number' && Number.isFinite(override) && override >= 0) {
+      merged[key] = override;
+    }
+  }
+  const sum = RUBRIC_KEYS.reduce((total, key) => total + merged[key], 0);
+  if (sum <= 0) return { ...DEFAULT_WEIGHTS };
+  return Object.fromEntries(
+    RUBRIC_KEYS.map((key) => [key, merged[key] / sum]),
+  ) as Record<RubricKey, number>;
+}
+
+/**
+ * Weighted 0–100 total — the only place the final score is computed. Missing
+ * or out-of-range dimensions are clamped to 0–100. Pass `weights` to score
+ * against an exercise's overrides; omit it for the rubric defaults.
+ */
+export function weightedTotal(
+  scores: Partial<Record<RubricKey, number>>,
+  weights: Record<RubricKey, number> = DEFAULT_WEIGHTS,
+): number {
+  const total = RUBRIC_KEYS.reduce((sum, key) => {
+    const raw = scores[key];
     const value = typeof raw === 'number' && Number.isFinite(raw) ? raw : 0;
-    return sum + Math.min(100, Math.max(0, value)) * dim.weight;
+    return sum + Math.min(100, Math.max(0, value)) * (weights[key] ?? 0);
   }, 0);
   return Math.round(total * 10) / 10;
+}
+
+/** True when an exercise's weights differ from the rubric defaults. */
+export function hasCustomWeights(overrides?: Partial<Record<RubricKey, number>>): boolean {
+  if (!overrides) return false;
+  const effective = effectiveWeights(overrides);
+  return RUBRIC_KEYS.some((key) => Math.abs(effective[key] - DEFAULT_WEIGHTS[key]) > 0.001);
 }

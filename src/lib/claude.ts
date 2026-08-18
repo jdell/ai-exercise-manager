@@ -1,5 +1,7 @@
 import { FunctionsError, httpsCallable } from 'firebase/functions';
 import { getFns } from './firebase';
+import { parsePartialEvaluation } from './partial-json';
+import type { PartialEvaluation } from './partial-json';
 import type { Evaluation } from '../types';
 
 /**
@@ -9,6 +11,15 @@ import type { Evaluation } from '../types';
  * Functions (functions/src/index.ts): the key lives in Secret Manager, and the
  * scores and produced output are written server-side with admin credentials so
  * a client cannot fabricate either.
+ *
+ * Both stream:
+ *   runStudentPrompt() — executes a student's prompt so they can see what it
+ *                        actually produces, streamed token by token.
+ *   evaluateSubmission() — grades a submission against the rubric, streamed so
+ *                          the student watches the scores arrive instead of a
+ *                          spinner. The deltas are fragments of one structured
+ *                          JSON document, which is why the preview goes through
+ *                          a lenient reader rather than JSON.parse.
  *
  * The prompt text the evaluator receives is still importable from
  * `./evaluator-prompt` — the console renders it, the function sends it, and
@@ -87,14 +98,38 @@ export interface EvaluationResult {
  * but the id is sent: the function reads the prompt it will grade, runs it, and
  * records the output and the score itself.
  */
-export async function evaluateSubmission(submissionId: string): Promise<EvaluationResult> {
-  const callable = httpsCallable<{ submissionId: string }, EvaluationResult>(
+export interface EvaluateOptions {
+  signal?: AbortSignal;
+  /**
+   * Called with whatever is legible in the partial response so far, so the
+   * student sees scores and feedback appear rather than a spinner. The value is
+   * a preview only — the returned Evaluation is the one the function computed
+   * and wrote, and it is what the teacher reviews.
+   */
+  onPartial?: (partial: PartialEvaluation) => void;
+}
+
+export async function evaluateSubmission(
+  submissionId: string,
+  options: EvaluateOptions = {},
+): Promise<EvaluationResult> {
+  const { signal, onPartial } = options;
+  const callable = httpsCallable<{ submissionId: string }, EvaluationResult, { text: string }>(
     fns(),
     'evaluateSubmission',
     { timeout: EVALUATE_TIMEOUT_MS },
   );
-  const { data } = await callable({ submissionId });
-  return data;
+
+  const { stream, data } = await callable.stream({ submissionId }, { signal });
+
+  let buffer = '';
+  for await (const chunk of stream) {
+    if (!chunk?.text) continue;
+    buffer += chunk.text;
+    onPartial?.(parsePartialEvaluation(buffer));
+  }
+
+  return await data;
 }
 
 // ---------------------------------------------------------------------------

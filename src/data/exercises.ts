@@ -1,8 +1,12 @@
 import type { Exercise } from '../types';
 
 /**
- * The five exercises, in unlock order. A student may only open exercise N once
- * exercise N-1 has been approved by a teacher.
+ * The five built-in exercises, in unlock order. A student may only open
+ * exercise N once exercise N-1 has been approved by a teacher.
+ *
+ * Teachers can add custom exercises from the teacher dashboard; those live in
+ * the database and are merged with these by useExercises(). Anything that
+ * renders or grades an exercise must read that hook, not this constant.
  */
 export const EXERCISES: Exercise[] = [
   {
@@ -11,6 +15,11 @@ export const EXERCISES: Exercise[] = [
     title: 'Clear Prompts',
     tagline: 'Say exactly what you want',
     estimatedMinutes: 15,
+    pathId: 'fundamentals',
+    difficulty: 'intro',
+    topic: 'Specificity',
+    maxPromptChars: 700,
+    source: 'builtin',
     brief:
       'Most disappointing AI output traces back to a prompt that left something to guess. A clear prompt pins down four things: the task, the audience, the constraints, and the shape of the answer. When any of those is missing the model fills the gap with an average-case assumption — and average is rarely what you wanted.',
     task:
@@ -40,6 +49,11 @@ export const EXERCISES: Exercise[] = [
     title: 'Role-Playing',
     tagline: 'Give the model a seat at the table',
     estimatedMinutes: 20,
+    pathId: 'fundamentals',
+    difficulty: 'core',
+    topic: 'Personas',
+    maxPromptChars: 1000,
+    source: 'builtin',
     brief:
       'Assigning a role changes which knowledge the model reaches for and which register it writes in. "You are a pediatric nurse explaining to a worried parent" pulls a different vocabulary, different priorities, and different caveats than the same question asked cold. The technique is only as good as the specificity of the role: a role is a job, an audience, a goal, and a set of things that person would never say.',
     task:
@@ -71,6 +85,11 @@ export const EXERCISES: Exercise[] = [
     title: 'JSON Output',
     tagline: 'Make output a machine can consume',
     estimatedMinutes: 25,
+    pathId: 'advanced',
+    difficulty: 'core',
+    topic: 'Structured output',
+    maxPromptChars: 1800,
+    source: 'builtin',
     brief:
       'The moment output feeds a program instead of a person, prose becomes a liability. You need a fixed set of keys, predictable types, and a defined answer for the missing case. This is the skill that turns a chat toy into a component of a system — and the failure modes are unforgiving: one stray sentence outside the braces and the parse throws.',
     task:
@@ -102,6 +121,11 @@ export const EXERCISES: Exercise[] = [
     title: 'Multi-Step Reasoning',
     tagline: 'Decompose before you delegate',
     estimatedMinutes: 30,
+    pathId: 'advanced',
+    difficulty: 'advanced',
+    topic: 'Decomposition',
+    maxPromptChars: 2200,
+    source: 'builtin',
     brief:
       'Hard tasks fail when they are handed over whole. The fix is to name the stages, define what each stage produces, and make each one depend on the last. Decomposition also makes failure legible — when the answer is wrong you can see which stage went wrong instead of re-rolling the whole thing and hoping.',
     task:
@@ -133,6 +157,11 @@ export const EXERCISES: Exercise[] = [
     title: 'Prompt Debugging',
     tagline: 'Diagnose, then repair',
     estimatedMinutes: 30,
+    pathId: 'advanced',
+    difficulty: 'advanced',
+    topic: 'Diagnosis',
+    maxPromptChars: 2600,
+    source: 'builtin',
     brief:
       'The last skill is fixing prompts that already exist — usually someone else\'s, usually under pressure. Debugging a prompt is like debugging code: form a hypothesis about which instruction is producing the bad behaviour, change one thing, and check whether the output moved. Rewriting from scratch is not debugging; it throws away the information in the failure.',
     task:
@@ -160,10 +189,24 @@ export const EXERCISES: Exercise[] = [
   },
 ];
 
+/** Built-in exercises only. For the merged list, use useExercises(). */
 export const EXERCISE_BY_ID: Record<string, Exercise> = Object.fromEntries(
   EXERCISES.map((e) => [e.id, e]),
 );
 
-export function exerciseAt(order: number): Exercise | undefined {
-  return EXERCISES.find((e) => e.order === order);
+/**
+ * Merge teacher-authored exercises with the built-ins, in unlock order. Ties
+ * on `order` fall back to creation time so the chain stays stable as teachers
+ * add exercises.
+ */
+export function mergeExercises(custom: Exercise[]): Exercise[] {
+  const byId = new Map<string, Exercise>();
+  for (const exercise of [...EXERCISES, ...custom]) byId.set(exercise.id, exercise);
+  return [...byId.values()].sort(
+    (a, b) => a.order - b.order || (a.createdAt ?? 0) - (b.createdAt ?? 0),
+  );
+}
+
+export function indexById(exercises: Exercise[]): Record<string, Exercise> {
+  return Object.fromEntries(exercises.map((e) => [e.id, e]));
 }

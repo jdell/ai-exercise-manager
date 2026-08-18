@@ -1,10 +1,18 @@
+import { useState } from 'react';
 import { Link } from 'react-router-dom';
 import { useSession } from '../context/SessionContext';
-import { useStudentProgress, useSubmissions } from '../hooks/useData';
-import { EXERCISES } from '../data/exercises';
+import { pathProgress, useExercises, useStudentProgress, useSubmissions } from '../hooks/useData';
 import { PASSING_SCORE } from '../data/rubric';
-import { Panel, RubricLegend, ScoreRing, StateBadge, relativeTime } from '../components/ui';
-import type { ExerciseState } from '../types';
+import {
+  DifficultyBadge,
+  Panel,
+  PathChip,
+  RubricLegend,
+  ScoreRing,
+  StateBadge,
+  relativeTime,
+} from '../components/ui';
+import type { ExerciseState, PathId } from '../types';
 
 const LOCK_HINT: Record<ExerciseState, string | null> = {
   locked: 'Unlocks when the previous exercise is approved',
@@ -17,13 +25,20 @@ const LOCK_HINT: Record<ExerciseState, string | null> = {
 export default function StudentDashboard() {
   const { session } = useSession();
   const { submissions, loading } = useSubmissions();
-  const progress = useStudentProgress(session?.id, submissions);
+  const { exercises, loading: exercisesLoading } = useExercises();
+  const progress = useStudentProgress(session?.id, submissions, exercises);
+  const [selectedPath, setSelectedPath] = useState<PathId | 'all'>('all');
 
-  const approvedCount = EXERCISES.filter((e) => progress.get(e.id)?.state === 'approved').length;
-  const scored = EXERCISES.map((e) => progress.get(e.id)?.best ?? 0).filter((s) => s > 0);
+  const paths = pathProgress(exercises, progress);
+  const approvedCount = exercises.filter((e) => progress.get(e.id)?.state === 'approved').length;
+  const scored = exercises.map((e) => progress.get(e.id)?.best ?? 0).filter((s) => s > 0);
   const average = scored.length
     ? Math.round((scored.reduce((a, b) => a + b, 0) / scored.length) * 10) / 10
     : 0;
+
+  const visible =
+    selectedPath === 'all' ? exercises : exercises.filter((e) => e.pathId === selectedPath);
+  const busy = loading || exercisesLoading;
 
   return (
     <div className="space-y-6">
@@ -33,9 +48,9 @@ export default function StudentDashboard() {
             Welcome back, {session?.name.split(' ')[0]}
           </h1>
           <p className="mt-1 text-sm text-ink-500">
-            {approvedCount === EXERCISES.length
-              ? 'All five exercises approved. Nicely done.'
-              : `${approvedCount} of ${EXERCISES.length} approved — keep going.`}
+            {exercises.length > 0 && approvedCount === exercises.length
+              ? 'Every exercise approved. Nicely done.'
+              : `${approvedCount} of ${exercises.length} approved — keep going.`}
           </p>
         </div>
 
@@ -52,24 +67,78 @@ export default function StudentDashboard() {
             <p className="text-xs tracking-wide text-ink-400 uppercase">Progress</p>
             <p className="text-2xl font-semibold tabular-nums text-ink-900">
               {approvedCount}
-              <span className="text-base font-normal text-ink-400">/{EXERCISES.length}</span>
+              <span className="text-base font-normal text-ink-400">/{exercises.length}</span>
             </p>
           </div>
         </div>
       </div>
 
+      {/* Learning paths */}
+      <div className="grid gap-3 sm:grid-cols-3">
+        {paths.map(({ path, approved, total, average: pathAverage }) => {
+          const active = selectedPath === path.id;
+          const pct = total ? (approved / total) * 100 : 0;
+          return (
+            <button
+              key={path.id}
+              onClick={() => setSelectedPath(active ? 'all' : path.id)}
+              aria-pressed={active}
+              className={`card p-4 text-left transition-all hover:-translate-y-px hover:shadow-sm ${
+                active ? 'border-indigo-400 ring-2 ring-indigo-100' : 'hover:border-indigo-300'
+              }`}
+            >
+              <div className="flex items-start justify-between gap-2">
+                <span className="font-medium text-ink-900">{path.title}</span>
+                <span className="text-xs tabular-nums text-ink-500">
+                  {approved}/{total}
+                </span>
+              </div>
+              <p className="mt-0.5 text-xs leading-relaxed text-ink-500">{path.blurb}</p>
+              <div className="mt-3 h-1.5 w-full overflow-hidden rounded-full bg-ink-200">
+                <div
+                  className="h-full rounded-full bg-emerald-500 transition-all duration-500"
+                  style={{ width: `${pct}%` }}
+                />
+              </div>
+              <p className="mt-1.5 text-[11px] text-ink-400">
+                {approved === total
+                  ? 'Path complete'
+                  : pathAverage > 0
+                    ? `Average ${pathAverage}`
+                    : 'Not started'}
+              </p>
+            </button>
+          );
+        })}
+      </div>
+
+      {selectedPath !== 'all' && (
+        <div className="flex items-center gap-2 text-sm text-ink-500">
+          <span>
+            Showing <span className="font-medium text-ink-800">{visible.length}</span> exercise
+            {visible.length === 1 ? '' : 's'} in this path.
+          </span>
+          <button
+            onClick={() => setSelectedPath('all')}
+            className="text-indigo-600 hover:underline"
+          >
+            Show all
+          </button>
+        </div>
+      )}
+
       <div className="grid gap-6 lg:grid-cols-[1fr_18rem]">
         <div className="space-y-3">
-          {loading && (
+          {busy && (
             <div className="space-y-3">
-              {EXERCISES.map((e) => (
-                <div key={e.id} className="h-[104px] animate-pulse rounded-xl bg-ink-100" />
+              {[0, 1, 2, 3, 4].map((i) => (
+                <div key={i} className="h-[104px] animate-pulse rounded-xl bg-ink-100" />
               ))}
             </div>
           )}
 
-          {!loading &&
-            EXERCISES.map((exercise) => {
+          {!busy &&
+            visible.map((exercise) => {
               const entry = progress.get(exercise.id);
               const state = entry?.state ?? 'locked';
               const locked = state === 'locked';
@@ -101,6 +170,8 @@ export default function StudentDashboard() {
                     <div className="flex flex-wrap items-center gap-2">
                       <h2 className="font-medium text-ink-900">{exercise.title}</h2>
                       <StateBadge state={state} />
+                      {selectedPath === 'all' && <PathChip pathId={exercise.pathId} />}
+                      <DifficultyBadge difficulty={exercise.difficulty} />
                     </div>
                     <p className="mt-0.5 truncate text-sm text-ink-500">{exercise.tagline}</p>
                     <p className="mt-1.5 text-xs text-ink-400">
@@ -138,7 +209,8 @@ export default function StudentDashboard() {
             <RubricLegend />
             <p className="mt-4 border-t border-ink-200 pt-3 text-xs leading-relaxed text-ink-500">
               A weighted total of {PASSING_SCORE} or above clears the bar. Your teacher makes the
-              final call and can adjust any score.
+              final call and can adjust any score. Some exercises weight the dimensions
+              differently — the workspace shows that exercise's own weights.
             </p>
           </Panel>
 
@@ -158,7 +230,7 @@ export default function StudentDashboard() {
               </li>
               <li>
                 <span className="font-medium text-ink-800">4.</span> Approval unlocks the next
-                exercise.
+                exercise, whichever path it is in.
               </li>
             </ul>
           </Panel>

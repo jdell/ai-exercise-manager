@@ -6,9 +6,11 @@ import SignUp from './pages/SignUp';
 import StudentDashboard from './pages/StudentDashboard';
 import StudentHistory from './pages/StudentHistory';
 import ExerciseWorkspace from './pages/ExerciseWorkspace';
+import SubmissionDetail from './pages/SubmissionDetail';
 import TeacherDashboard from './pages/TeacherDashboard';
 import TeacherReview from './pages/TeacherReview';
 import ClassProgress from './pages/ClassProgress';
+import TeacherExercises from './pages/TeacherExercises';
 import EvaluatorConsole from './pages/EvaluatorConsole';
 import Settings from './pages/Settings';
 import type { Role } from './types';
@@ -81,6 +83,14 @@ function AppRoutes() {
             </Protected>
           }
         />
+        <Route
+          path="/submission/:submissionId"
+          element={
+            <Protected roles={['student', 'teacher']}>
+              <SubmissionDetail />
+            </Protected>
+          }
+        />
 
         <Route
           path="/teacher"
@@ -95,6 +105,14 @@ function AppRoutes() {
           element={
             <Protected roles={['teacher']}>
               <ClassProgress />
+            </Protected>
+          }
+        />
+        <Route
+          path="/teacher/exercises"
+          element={
+            <Protected roles={['teacher']}>
+              <TeacherExercises />
             </Protected>
           }
         />
