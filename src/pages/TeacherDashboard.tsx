@@ -4,6 +4,7 @@ import { useExercises, useStudents, useSubmissions } from '../hooks/useData';
 import { PASSING_SCORE } from '../data/rubric';
 import {
   EmptyState,
+  IntegrityBadge,
   Panel,
   ScoreRing,
   StatusBadge,
@@ -202,6 +203,7 @@ function SubmissionRow({
           <span className="text-sm text-ink-600">{exerciseTitle}</span>
           <span className="text-xs text-ink-400">attempt {submission.attempt}</span>
           <StatusBadge status={submission.status} />
+          <IntegrityBadge report={submission.evaluation?.integrity} />
         </div>
         <p className="mt-1 line-clamp-1 text-sm text-ink-500">
           {submission.evaluation?.summary ?? submission.prompt.slice(0, 140)}

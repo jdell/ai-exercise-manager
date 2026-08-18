@@ -136,6 +136,69 @@ export interface Evaluation {
    * own total instead of silently disagreeing with a live recomputation.
    */
   weights?: Record<RubricKey, number>;
+  /** A faster model's independent read, when the second pass is enabled. */
+  secondOpinion?: SecondOpinion;
+  /** Anti-gaming signals. Advisory — see IntegrityReport. */
+  integrity?: IntegrityReport;
+}
+
+/**
+ * A second, cheaper model's independent read on the same submission.
+ *
+ * The point is disagreement, not accuracy: where a fast model and a deep one
+ * diverge on a dimension, the teacher is looking at a genuinely ambiguous
+ * submission and should read it themselves.
+ */
+export interface SecondOpinion {
+  model: string;
+  scores: Record<RubricKey, number>;
+  /** 0–100, computed here with the same weights as the primary evaluation. */
+  weightedTotal: number;
+  meetsBar: boolean;
+  /** One line on where this read differs from the obvious one. */
+  note: string;
+  evaluatedAt: number;
+  /** Set when the second pass failed. The primary grade still stands. */
+  error?: string;
+}
+
+/** What a gaming check found. Codes are explained in `src/lib/integrity.ts`. */
+export type IntegrityCode =
+  | 'copied_example'
+  | 'copied_task'
+  | 'template_language'
+  | 'rubric_stuffing'
+  | 'exact_word_count'
+  | 'thin_reflection'
+  | 'reflection_echoes_prompt'
+  | 'evaluator_addressed';
+
+export type IntegritySeverity = 'info' | 'warn' | 'high';
+
+export interface IntegrityFlag {
+  code: IntegrityCode;
+  severity: IntegritySeverity;
+  /** What was detected, phrased so a teacher can act on it. */
+  detail: string;
+  /** The text that triggered it, trimmed for display. */
+  evidence?: string;
+}
+
+/**
+ * Anti-gaming signals for one submission.
+ *
+ * This is never a verdict — a flagged submission may be perfectly honest, and
+ * `concern` exists only to sort the review queue. Nothing here changes a score
+ * or blocks an approval; a teacher decides.
+ */
+export interface IntegrityReport {
+  flags: IntegrityFlag[];
+  /** 0–100 attention score. Sort order for teachers, not a grade. */
+  concern: number;
+  /** The evaluator's own read, independent of the deterministic checks. */
+  modelSuspects?: boolean;
+  modelNote?: string;
+  checkedAt: number;
 }
 
 export interface TeacherReview {
@@ -147,6 +210,14 @@ export interface TeacherReview {
   reviewedAt: number;
   reviewedBy: string;
   decision: 'approved' | 'revision';
+  /**
+   * Scores the teacher set *before* Claude's were revealed. Present only when
+   * they used blind mode. Calibration is measured from these and nothing else:
+   * an override entered while looking at Claude's number is an adjustment, not
+   * an independent judgement, and averaging the two would flatter the metric.
+   */
+  blindScores?: Partial<Record<RubricKey, number>>;
+  blindAt?: number;
 }
 
 export type SubmissionStatus =
