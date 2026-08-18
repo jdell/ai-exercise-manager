@@ -134,3 +134,64 @@
     animation: none;
   }
 }
+
+/*
+ * Print — the PDF export path.
+ *
+ * "Save as PDF" is the browser's own print pipeline rather than a bundled PDF
+ * renderer, so what these rules produce IS the export. Anything hidden here is
+ * absent from the file a guardian receives.
+ *
+ * The charts are inline SVG for this reason: they print at the printer's
+ * resolution instead of being rasterised, and `print-color-adjust` keeps their
+ * fills from being helpfully optimised away.
+ */
+@media print {
+  /* App chrome, navigation, and any control that does nothing on paper. */
+  header,
+  nav,
+  .no-print {
+    display: none !important;
+  }
+
+  html,
+  body {
+    background: #fff;
+    font-size: 11pt;
+  }
+
+  main {
+    max-width: none;
+    padding: 0;
+    margin: 0;
+  }
+
+  /* The report is its own sheet: no card chrome, no shadow, no rounding. */
+  .print-sheet {
+    border: 0;
+    border-radius: 0;
+    box-shadow: none;
+    padding: 0;
+  }
+
+  /* Keep fills and score colours — they carry meaning in the tables. */
+  * {
+    print-color-adjust: exact;
+    -webkit-print-color-adjust: exact;
+  }
+
+  /* Sections are marked break-inside-avoid at the call site; honour it. */
+  .break-inside-avoid {
+    break-inside: avoid;
+    page-break-inside: avoid;
+  }
+
+  a[href] {
+    text-decoration: none;
+    color: inherit;
+  }
+}
+
+@page {
+  margin: 16mm;
+}
