@@ -21,6 +21,8 @@ jobs:
   build:
     name: Build
     runs-on: ubuntu-latest
+    outputs:
+      firebase-configured: ${{ steps.credentials.outputs.configured }}
     steps:
       - uses: actions/checkout@v5
 
@@ -52,23 +54,44 @@ jobs:
           # own in Settings instead.
 
       - name: Upload build output
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: dist
           path: dist
           retention-days: 7
 
+      # The `secrets` context is not available in a job-level `if`, so the
+      # presence check happens here and the deploy job gates on the output.
+      # Without this, a fresh clone with no Firebase project fails red on every
+      # push even though the build itself is fine.
+      - name: Check for Firebase credentials
+        id: credentials
+        env:
+          SERVICE_ACCOUNT: ${{ secrets.FIREBASE_SERVICE_ACCOUNT }}
+          PROJECT_ID: ${{ secrets.FIREBASE_PROJECT_ID }}
+        run: |
+          if [ -n "$SERVICE_ACCOUNT" ] && [ -n "$PROJECT_ID" ]; then
+            echo "configured=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "configured=false" >> "$GITHUB_OUTPUT"
+            echo "::notice title=Deploy skipped::Set the FIREBASE_SERVICE_ACCOUNT and FIREBASE_PROJECT_ID repository secrets to enable deployment. See README.md."
+          fi
+
   deploy:
     name: Deploy to Firebase Hosting
     needs: build
     runs-on: ubuntu-latest
-    # Skip on forks, where the service-account secret is unavailable.
-    if: github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository
+    # Skip when Firebase secrets are absent, and on forks where they are
+    # unavailable regardless.
+    if: >-
+      needs.build.outputs.firebase-configured == 'true' &&
+      (github.event_name != 'pull_request' ||
+       github.event.pull_request.head.repo.full_name == github.repository)
     steps:
       - uses: actions/checkout@v5
 
       - name: Download build output
-        uses: actions/download-artifact@v4
+        uses: actions/download-artifact@v8
         with:
           name: dist
           path: dist
