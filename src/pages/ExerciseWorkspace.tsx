@@ -1,7 +1,9 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { Link, Navigate, useParams } from 'react-router-dom';
 import { useSession } from '../context/SessionContext';
+import { useLocale } from '../context/LocaleContext';
 import { useExercises, useStudentProgress, useSubmissions } from '../hooks/useData';
+import { localizeExercise } from '../data/exercises';
 import { describeError, evaluateSubmission, runStudentPrompt } from '../lib/claude';
 import { createSubmission, newId } from '../lib/store';
 import { EMPTY_PARTIAL } from '../lib/partial-json';
@@ -29,11 +31,18 @@ const MIN_REFLECTION = 40;
 export default function ExerciseWorkspace() {
   const { exerciseId } = useParams<{ exerciseId: string }>();
   const { session } = useSession();
+  const { t, locale } = useLocale();
   const { submissions, loading } = useSubmissions();
   const { exercises, byId, loading: exercisesLoading } = useExercises();
   const progress = useStudentProgress(session?.id, submissions, exercises);
 
-  const exercise = exerciseId ? byId[exerciseId] : undefined;
+  // Everything the student reads is localised; what gets submitted and graded
+  // is keyed to the canonical exercise, which is why only `exercise` moves.
+  const canonical = exerciseId ? byId[exerciseId] : undefined;
+  const exercise = useMemo(
+    () => (canonical ? localizeExercise(canonical, locale) : undefined),
+    [canonical, locale],
+  );
   const entry = exerciseId ? progress.get(exerciseId) : undefined;
 
   const attempts = useMemo(
@@ -139,6 +148,10 @@ export default function ExerciseWorkspace() {
       status: 'evaluating',
       createdAt: now,
       updatedAt: now,
+      // Recorded so the evaluator writes back in the language this attempt was
+      // written in, whatever the reader's UI is set to when the feedback is
+      // read. The rules accept only 'en' or 'es'.
+      locale,
     };
 
     try {
@@ -147,7 +160,7 @@ export default function ExerciseWorkspace() {
       // The test-run output is deliberately discarded here: the function re-runs
       // the recorded prompt itself. The scores still stream back, so the student
       // watches the evaluation arrive rather than a spinner.
-      setStage('Running your prompt and scoring it…');
+      setStage(t('workspace.evaluatingStage'));
       setOutput('');
       setOutputFor(null);
       setPartial(EMPTY_PARTIAL);
@@ -174,7 +187,7 @@ export default function ExerciseWorkspace() {
       {/* Header */}
       <div>
         <Link to="/" className="text-sm text-ink-500 hover:text-ink-800">
-          ← All exercises
+          {t('workspace.allExercises')}
         </Link>
         <div className="mt-2 flex flex-wrap items-center gap-3">
           <h1 className="text-2xl font-semibold text-ink-900">
@@ -187,33 +200,34 @@ export default function ExerciseWorkspace() {
           <PathChip pathId={exercise.pathId} />
           <DifficultyBadge difficulty={exercise.difficulty} />
           <span className="text-xs text-ink-400">{exercise.topic}</span>
-          <span className="text-xs text-ink-400">· about {exercise.estimatedMinutes} min</span>
+          <span className="text-xs text-ink-400">
+            {t('workspace.aboutMinutes', { n: exercise.estimatedMinutes })}
+          </span>
         </div>
       </div>
 
       {state === 'approved' && (
         <Alert tone="success">
-          This exercise is approved.{' '}
+          {t('workspace.approvedNext')}{' '}
           {nextEx ? (
             <Link to={`/exercise/${nextEx.id}`} className="font-medium underline">
-              Continue to {nextEx.title}
+              {t('workspace.continueTo', {
+                title: localizeExercise(nextEx, locale).title,
+              })}
             </Link>
           ) : (
-            'You have finished the whole track.'
+            t('workspace.trackFinished')
           )}
         </Alert>
       )}
 
       {state === 'in_review' && (
-        <Alert tone="info">
-          Attempt {latest?.attempt} is submitted and waiting for your teacher. You will be able to
-          submit again if they ask for a revision.
-        </Alert>
+        <Alert tone="info">{t('workspace.inReview', { n: latest?.attempt ?? 1 })}</Alert>
       )}
 
       {state === 'revision' && latest?.review?.comment && (
         <Alert tone="warning">
-          <span className="font-medium">Your teacher asked for another attempt:</span>{' '}
+          <span className="font-medium">{t('workspace.revisionAsked')}</span>{' '}
           {latest.review.comment}
         </Alert>
       )}
@@ -222,25 +236,52 @@ export default function ExerciseWorkspace() {
         <div className="min-w-0 space-y-6">
           {/* Brief */}
           <Panel
-            title="The exercise"
+            title={t('workspace.theExercise')}
             action={
               <button onClick={() => setShowBrief((v) => !v)} className="btn-ghost px-2 py-1 text-xs">
-                {showBrief ? 'Hide' : 'Show'}
+                {showBrief ? t('common.hide') : t('common.show')}
               </button>
             }
           >
             {showBrief ? (
               <div className="space-y-4">
+                {/* Real-world challenges lead with the situation: the brief
+                    below only makes sense once you know who is waiting for the
+                    output. The evaluator is told the same thing. */}
+                {exercise.scenario && (
+                  <div className="rounded-lg border border-teal-200 bg-teal-50/60 p-4">
+                    <h3 className="mb-2 text-xs font-semibold tracking-wide text-teal-800 uppercase">
+                      {t('workspace.situation')}
+                    </h3>
+                    <p className="text-sm leading-relaxed text-ink-800">
+                      {exercise.scenario.context}
+                    </p>
+                    <dl className="mt-3 space-y-1.5 border-t border-teal-200/70 pt-3 text-xs leading-relaxed">
+                      <ScenarioRow
+                        label={t('workspace.scenarioRole')}
+                        value={exercise.scenario.role}
+                      />
+                      <ScenarioRow
+                        label={t('workspace.scenarioStakeholder')}
+                        value={exercise.scenario.stakeholder}
+                      />
+                      <ScenarioRow
+                        label={t('workspace.scenarioAtStake')}
+                        value={exercise.scenario.atStake}
+                      />
+                    </dl>
+                  </div>
+                )}
                 <p className="text-sm leading-relaxed text-ink-700">{exercise.brief}</p>
                 <div className="rounded-lg border border-indigo-200 bg-indigo-50/60 p-4">
                   <h3 className="mb-1.5 text-xs font-semibold tracking-wide text-indigo-800 uppercase">
-                    Your task
+                    {t('workspace.yourTask')}
                   </h3>
                   <p className="text-sm leading-relaxed text-ink-800">{exercise.task}</p>
                 </div>
                 <div>
                   <h3 className="mb-2 text-xs font-semibold tracking-wide text-ink-500 uppercase">
-                    Requirements
+                    {t('workspace.requirements')}
                   </h3>
                   <ul className="space-y-1.5">
                     {exercise.successCriteria.map((c) => (
@@ -257,10 +298,18 @@ export default function ExerciseWorkspace() {
                 {(exercise.goodExample || exercise.badExample) && (
                   <div className="grid gap-3 border-t border-ink-200 pt-4 sm:grid-cols-2">
                     {exercise.goodExample && (
-                      <ExampleCard tone="good" title="Closer to it" text={exercise.goodExample} />
+                      <ExampleCard
+                        tone="good"
+                        title={t('workspace.closerToIt')}
+                        text={exercise.goodExample}
+                      />
                     )}
                     {exercise.badExample && (
-                      <ExampleCard tone="bad" title="Not this" text={exercise.badExample} />
+                      <ExampleCard
+                        tone="bad"
+                        title={t('workspace.notThis')}
+                        text={exercise.badExample}
+                      />
                     )}
                   </div>
                 )}
@@ -272,17 +321,17 @@ export default function ExerciseWorkspace() {
 
           {/* Prompt editor */}
           <Panel
-            title="Your prompt"
+            title={t('workspace.yourPrompt')}
             subtitle={
               exercise.testInput
-                ? 'Runs against the fixed material shown below, so every attempt is comparable.'
-                : 'Runs exactly as written.'
+                ? t('workspace.runsAgainstMaterial')
+                : t('workspace.runsAsWritten')
             }
             action={
               <div className="flex items-center gap-2">
                 {running ? (
                   <button onClick={() => abortRef.current?.abort()} className="btn-secondary px-3 py-1.5 text-xs">
-                    Stop
+                    {t('workspace.stop')}
                   </button>
                 ) : (
                   <button
@@ -290,7 +339,7 @@ export default function ExerciseWorkspace() {
                     disabled={!prompt.trim() || submitting || readOnly}
                     className="btn-secondary px-3 py-1.5 text-xs"
                   >
-                    Test run
+                    {t('workspace.testRun')}
                   </button>
                 )}
               </div>
@@ -302,18 +351,18 @@ export default function ExerciseWorkspace() {
               onChange={(e) => setPrompt(e.target.value)}
               disabled={readOnly || submitting}
               spellCheck={false}
-              placeholder="Write your prompt here…"
-              aria-label="Your prompt"
+              placeholder={t('workspace.promptPlaceholder')}
+              aria-label={t('workspace.yourPrompt')}
             />
             <div className="mt-2 flex items-center justify-between gap-3">
-              <p className="hint">Test runs are unlimited and are never graded.</p>
+              <p className="hint">{t('workspace.testRunsFree')}</p>
               <CharCounter used={prompt.length} limit={exercise.maxPromptChars} />
             </div>
 
             {exercise.testInput && (
               <details className="mt-4 rounded-lg border border-ink-200 bg-ink-50">
                 <summary className="cursor-pointer px-3.5 py-2.5 text-sm font-medium text-ink-700">
-                  Material your prompt runs against
+                  {t('workspace.material')}
                 </summary>
                 <pre className="scroll-slim max-h-64 overflow-auto border-t border-ink-200 px-3.5 py-3 font-mono text-xs leading-relaxed whitespace-pre-wrap text-ink-600">
                   {exercise.testInput}
@@ -324,8 +373,14 @@ export default function ExerciseWorkspace() {
 
           {/* Output */}
           <Panel
-            title="What Claude produced"
-            subtitle={running ? 'Streaming…' : outputFor ? 'From your latest test run' : undefined}
+            title={t('workspace.whatClaudeProduced')}
+            subtitle={
+              running
+                ? t('workspace.streaming')
+                : outputFor
+                  ? t('workspace.fromLatestRun')
+                  : undefined
+            }
             action={running ? <Spinner className="h-4 w-4 text-indigo-500" /> : undefined}
           >
             {output || running ? (
@@ -334,30 +389,35 @@ export default function ExerciseWorkspace() {
                 {running && <span className="ml-0.5 inline-block h-4 w-1.5 animate-pulse bg-indigo-500 align-text-bottom" />}
               </pre>
             ) : (
-              <EmptyState title="No output yet">
-                Hit <span className="font-medium">Test run</span> to see what your prompt produces.
+              <EmptyState title={t('workspace.noOutput')}>
+                {t('workspace.noOutputHint')}
               </EmptyState>
             )}
           </Panel>
 
           {/* Reflection + submit */}
           <Panel
-            title="Reflection"
-            subtitle={`Explain why your prompt works — this is ${Math.round(weights.understanding * 100)}% of your score.`}
+            title={t('workspace.reflection')}
+            subtitle={t('workspace.reflectionSubtitle', {
+              percent: Math.round(weights.understanding * 100),
+            })}
           >
             <textarea
               className="input min-h-[9rem] resize-y"
               value={reflection}
               onChange={(e) => setReflection(e.target.value)}
               disabled={readOnly || submitting}
-              placeholder="What techniques did you use, and why does each one change the output? What did you try that didn't work? Where would this prompt break?"
-              aria-label="Reflection"
+              placeholder={t('workspace.reflectionPlaceholder')}
+              aria-label={t('workspace.reflection')}
             />
             <div className="mt-2 flex items-center justify-between">
               <p className={`hint ${reflectionShort && reflection.length > 0 ? 'text-amber-600' : ''}`}>
                 {reflectionShort
-                  ? `At least ${MIN_REFLECTION} characters — currently ${reflection.trim().length}.`
-                  : 'Naming the mechanism scores higher than describing the result.'}
+                  ? t('workspace.reflectionShort', {
+                      min: MIN_REFLECTION,
+                      n: reflection.trim().length,
+                    })
+                  : t('workspace.reflectionHint')}
               </p>
             </div>
 
@@ -377,14 +437,12 @@ export default function ExerciseWorkspace() {
               <div className="mt-5 flex flex-wrap items-center gap-3 border-t border-ink-200 pt-4">
                 <button onClick={handleSubmit} disabled={!canSubmit} className="btn-primary">
                   {submitting && <Spinner />}
-                  {submitting ? 'Submitting…' : `Submit attempt ${(entry?.attempts.length ?? 0) + 1}`}
+                  {submitting
+                    ? t('workspace.submitting')
+                    : t('workspace.submitAttempt', { n: (entry?.attempts.length ?? 0) + 1 })}
                 </button>
                 {stage && !partial && <span className="text-sm text-ink-500">{stage}</span>}
-                {!submitting && (
-                  <span className="hint">
-                    Submitting re-runs your prompt on the server, then scores what it produced.
-                  </span>
-                )}
+                {!submitting && <span className="hint">{t('workspace.submitHint')}</span>}
               </div>
             )}
           </Panel>
@@ -392,12 +450,8 @@ export default function ExerciseWorkspace() {
           {/* Revision history */}
           {attempts.length > 0 && (
             <Panel
-              title={`Your attempts (${attempts.length})`}
-              subtitle={
-                attempts.length > 1
-                  ? 'Every attempt is kept, with the feedback it got.'
-                  : undefined
-              }
+              title={t('workspace.yourAttempts', { n: attempts.length })}
+              subtitle={attempts.length > 1 ? t('workspace.attemptsKept') : undefined}
             >
               <div className="space-y-5">
                 <RevisionTimeline
@@ -417,7 +471,7 @@ export default function ExerciseWorkspace() {
         {/* Sidebar */}
         <aside className="space-y-6">
           {exercise.tips.length > 0 && (
-            <Panel title="Tips">
+            <Panel title={t('workspace.tips')}>
               <ul className="space-y-2.5">
                 {exercise.tips.map((tip) => (
                   <li key={tip} className="flex gap-2.5 text-sm leading-relaxed text-ink-600">
@@ -430,17 +484,17 @@ export default function ExerciseWorkspace() {
           )}
 
           {latest?.evaluation && (
-            <Panel title={`Attempt ${latest.attempt} score`}>
+            <Panel title={t('workspace.attemptScore', { n: latest.attempt })}>
               <div className="mb-4 flex items-center gap-4">
                 <ScoreRing score={latest.review?.finalScore ?? latest.evaluation.weightedTotal} />
                 <div className="text-sm">
                   <p className="font-medium text-ink-900">
                     {(latest.review?.finalScore ?? latest.evaluation.weightedTotal) >= PASSING_SCORE
-                      ? 'Clears the bar'
-                      : 'Below the bar'}
+                      ? t('common.clearsBar')
+                      : t('common.belowBar')}
                   </p>
                   <p className="mt-0.5 text-xs text-ink-500">
-                    {latest.review ? 'Teacher-reviewed' : 'Claude score, pending review'}
+                    {latest.review ? t('common.teacherReviewed') : t('common.pendingReview')}
                   </p>
                 </div>
               </div>
@@ -453,12 +507,22 @@ export default function ExerciseWorkspace() {
                 to={`/submission/${latest.id}`}
                 className="mt-4 block text-xs font-medium text-indigo-600 hover:underline"
               >
-                Open the full feedback →
+                {t('workspace.openFullFeedback')}
               </Link>
             </Panel>
           )}
         </aside>
       </div>
+    </div>
+  );
+}
+
+/** One line of the scenario card: who, to whom, at what cost. */
+function ScenarioRow({ label, value }: { label: string; value: string }) {
+  return (
+    <div className="flex gap-2">
+      <dt className="shrink-0 font-semibold tracking-wide text-teal-800 uppercase">{label}</dt>
+      <dd className="text-ink-700">{value}</dd>
     </div>
   );
 }
@@ -477,6 +541,7 @@ function ExampleCard({ tone, title, text }: { tone: 'good' | 'bad'; title: strin
 }
 
 function AttemptCard({ submission }: { submission: Submission }) {
+  const { t } = useLocale();
   const [open, setOpen] = useState(false);
   const score = submission.review?.finalScore ?? submission.evaluation?.weightedTotal ?? 0;
 
@@ -518,12 +583,12 @@ function AttemptCard({ submission }: { submission: Submission }) {
               />
               <div className="grid gap-4 sm:grid-cols-2">
                 <FeedbackList
-                  title="Strengths"
+                  title={t('common.strengths')}
                   items={submission.evaluation.strengths}
                   tone="emerald"
                 />
                 <FeedbackList
-                  title="Next time"
+                  title={t('common.nextTime')}
                   items={submission.evaluation.improvements}
                   tone="amber"
                 />
@@ -534,7 +599,7 @@ function AttemptCard({ submission }: { submission: Submission }) {
           {submission.review?.comment && (
             <div className="rounded-lg border border-indigo-200 bg-indigo-50/60 p-3.5">
               <p className="mb-1 text-xs font-semibold tracking-wide text-indigo-800 uppercase">
-                Teacher comment
+                {t('common.teacherComment')}
               </p>
               <p className="text-sm leading-relaxed text-ink-800">{submission.review.comment}</p>
             </div>
@@ -544,24 +609,24 @@ function AttemptCard({ submission }: { submission: Submission }) {
             to={`/submission/${submission.id}`}
             className="inline-block text-xs font-medium text-indigo-600 hover:underline"
           >
-            Compare with your other attempts →
+            {t('workspace.compareAttempts')}
           </Link>
 
           <details className="rounded-lg border border-ink-200 bg-ink-50">
             <summary className="cursor-pointer px-3.5 py-2.5 text-sm font-medium text-ink-700">
-              Prompt and output from this attempt
+              {t('workspace.promptAndOutput')}
             </summary>
             <div className="space-y-3 border-t border-ink-200 px-3.5 py-3">
               <div>
-                <p className="hint mb-1 font-medium">Prompt</p>
+                <p className="hint mb-1 font-medium">{t('workspace.prompt')}</p>
                 <pre className="prose-output rounded bg-white p-3 font-mono text-ink-700">
                   {submission.prompt}
                 </pre>
               </div>
               <div>
-                <p className="hint mb-1 font-medium">Output</p>
+                <p className="hint mb-1 font-medium">{t('workspace.output')}</p>
                 <pre className="prose-output scroll-slim max-h-72 overflow-auto rounded bg-white p-3 text-ink-700">
-                  {submission.output || '(none)'}
+                  {submission.output || t('workspace.noneCaptured')}
                 </pre>
               </div>
             </div>

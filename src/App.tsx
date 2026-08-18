@@ -1,5 +1,6 @@
 import { Navigate, Route, Routes } from 'react-router-dom';
 import { SessionProvider, useSession } from './context/SessionContext';
+import { useLocale } from './context/LocaleContext';
 import Layout from './components/Layout';
 import SignIn from './pages/SignIn';
 import SignUp from './pages/SignUp';
@@ -9,6 +10,7 @@ import StudentProgress from './pages/StudentProgress';
 import TeacherAnalytics from './pages/TeacherAnalytics';
 import ReportCard from './pages/ReportCard';
 import ExerciseWorkspace from './pages/ExerciseWorkspace';
+import Playground from './pages/Playground';
 import SubmissionDetail from './pages/SubmissionDetail';
 import TeacherDashboard from './pages/TeacherDashboard';
 import TeacherReview from './pages/TeacherReview';
@@ -44,11 +46,12 @@ function Home() {
 }
 
 function Splash() {
+  const { t } = useLocale();
   return (
     <div className="grid min-h-full place-items-center">
       <div className="flex items-center gap-3 text-sm text-ink-500">
         <span className="h-4 w-4 animate-spin rounded-full border-2 border-ink-300 border-t-indigo-500" />
-        Checking your session…
+        {t('layout.checkingSession')}
       </div>
     </div>
   );
@@ -91,6 +94,18 @@ function AppRoutes() {
           element={
             <Protected roles={['student']}>
               <StudentProgress />
+            </Protected>
+          }
+        />
+        {/*
+          Open to both roles: a teacher setting an exercise wants the same
+          scratch space, and nothing here is graded or recorded.
+        */}
+        <Route
+          path="/playground"
+          element={
+            <Protected roles={['student', 'teacher']}>
+              <Playground />
             </Protected>
           }
         />

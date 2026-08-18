@@ -1,9 +1,13 @@
-import { useState } from 'react';
+import { useMemo, useState } from 'react';
 import { Link } from 'react-router-dom';
 import { useSession } from '../context/SessionContext';
+import { useLocale } from '../context/LocaleContext';
 import { pathProgress, useExercises, useStudentProgress, useSubmissions } from '../hooks/useData';
 import { PASSING_SCORE } from '../data/rubric';
+import { localizeExercise } from '../data/exercises';
+import { achievementsFor, earnedCount } from '../lib/achievements';
 import {
+  AchievementGrid,
   DifficultyBadge,
   Panel,
   PathChip,
@@ -12,22 +16,20 @@ import {
   StateBadge,
   relativeTime,
 } from '../components/ui';
-import type { ExerciseState, PathId } from '../types';
-
-const LOCK_HINT: Record<ExerciseState, string | null> = {
-  locked: 'Unlocks when the previous exercise is approved',
-  available: null,
-  in_review: 'Submitted — waiting on your teacher',
-  revision: 'Your teacher asked for another attempt',
-  approved: null,
-};
+import type { PathId } from '../types';
 
 export default function StudentDashboard() {
   const { session } = useSession();
+  const { t, tn, locale } = useLocale();
   const { submissions, loading } = useSubmissions();
   const { exercises, loading: exercisesLoading } = useExercises();
   const progress = useStudentProgress(session?.id, submissions, exercises);
   const [selectedPath, setSelectedPath] = useState<PathId | 'all'>('all');
+
+  const achievements = useMemo(
+    () => (session ? achievementsFor(session.id, submissions, exercises) : []),
+    [session, submissions, exercises],
+  );
 
   const paths = pathProgress(exercises, progress);
   const approvedCount = exercises.filter((e) => progress.get(e.id)?.state === 'approved').length;
@@ -45,18 +47,20 @@ export default function StudentDashboard() {
       <div className="flex flex-wrap items-end justify-between gap-4">
         <div>
           <h1 className="text-2xl font-semibold text-ink-900">
-            Welcome back, {session?.name.split(' ')[0]}
+            {t('dashboard.welcome', { name: session?.name.split(' ')[0] ?? '' })}
           </h1>
           <p className="mt-1 text-sm text-ink-500">
             {exercises.length > 0 && approvedCount === exercises.length
-              ? 'Every exercise approved. Nicely done.'
-              : `${approvedCount} of ${exercises.length} approved — keep going.`}
+              ? t('dashboard.allApproved')
+              : t('dashboard.approvedOf', { approved: approvedCount, total: exercises.length })}
           </p>
         </div>
 
         <div className="flex items-center gap-6">
           <div className="text-right">
-            <p className="text-xs tracking-wide text-ink-400 uppercase">Average score</p>
+            <p className="text-xs tracking-wide text-ink-400 uppercase">
+              {t('dashboard.averageScore')}
+            </p>
             <p className="text-2xl font-semibold tabular-nums text-ink-900">
               {average || '—'}
               {average > 0 && <span className="text-base font-normal text-ink-400">/100</span>}
@@ -64,7 +68,9 @@ export default function StudentDashboard() {
           </div>
           <div className="h-11 w-px bg-ink-200" />
           <div className="text-right">
-            <p className="text-xs tracking-wide text-ink-400 uppercase">Progress</p>
+            <p className="text-xs tracking-wide text-ink-400 uppercase">
+              {t('dashboard.progress')}
+            </p>
             <p className="text-2xl font-semibold tabular-nums text-ink-900">
               {approvedCount}
               <span className="text-base font-normal text-ink-400">/{exercises.length}</span>
@@ -88,12 +94,14 @@ export default function StudentDashboard() {
               }`}
             >
               <div className="flex items-start justify-between gap-2">
-                <span className="font-medium text-ink-900">{path.title}</span>
+                <span className="font-medium text-ink-900">{t(`path.${path.id}.title`)}</span>
                 <span className="text-xs tabular-nums text-ink-500">
                   {approved}/{total}
                 </span>
               </div>
-              <p className="mt-0.5 text-xs leading-relaxed text-ink-500">{path.blurb}</p>
+              <p className="mt-0.5 text-xs leading-relaxed text-ink-500">
+                {t(`path.${path.id}.blurb`)}
+              </p>
               <div className="mt-3 h-1.5 w-full overflow-hidden rounded-full bg-ink-200">
                 <div
                   className="h-full rounded-full bg-emerald-500 transition-all duration-500"
@@ -102,10 +110,10 @@ export default function StudentDashboard() {
               </div>
               <p className="mt-1.5 text-[11px] text-ink-400">
                 {approved === total
-                  ? 'Path complete'
+                  ? t('dashboard.pathComplete')
                   : pathAverage > 0
-                    ? `Average ${pathAverage}`
-                    : 'Not started'}
+                    ? t('dashboard.pathAverage', { score: pathAverage })
+                    : t('dashboard.notStarted')}
               </p>
             </button>
           );
@@ -114,15 +122,12 @@ export default function StudentDashboard() {
 
       {selectedPath !== 'all' && (
         <div className="flex items-center gap-2 text-sm text-ink-500">
-          <span>
-            Showing <span className="font-medium text-ink-800">{visible.length}</span> exercise
-            {visible.length === 1 ? '' : 's'} in this path.
-          </span>
+          <span>{tn('dashboard.showingInPath', visible.length)}</span>
           <button
             onClick={() => setSelectedPath('all')}
             className="text-indigo-600 hover:underline"
           >
-            Show all
+            {t('dashboard.showAll')}
           </button>
         </div>
       )}
@@ -138,12 +143,20 @@ export default function StudentDashboard() {
           )}
 
           {!busy &&
-            visible.map((exercise) => {
+            visible.map((canonical) => {
+              // The board reads the student's language; the lock, the score,
+              // and the grade all still key off the canonical record.
+              const exercise = localizeExercise(canonical, locale);
               const entry = progress.get(exercise.id);
               const state = entry?.state ?? 'locked';
               const locked = state === 'locked';
               const latest = entry?.attempts?.[entry.attempts.length - 1];
-              const hint = LOCK_HINT[state];
+              // Narrowed by hand rather than by a lookup table: only these
+              // three states have a hint key, and the union has to prove it.
+              const hint =
+                state === 'locked' || state === 'in_review' || state === 'revision'
+                  ? t(`state.hint.${state}`)
+                  : null;
 
               const card = (
                 <article
@@ -175,8 +188,12 @@ export default function StudentDashboard() {
                     </div>
                     <p className="mt-0.5 truncate text-sm text-ink-500">{exercise.tagline}</p>
                     <p className="mt-1.5 text-xs text-ink-400">
-                      {hint ?? `About ${exercise.estimatedMinutes} min`}
-                      {latest && ` · attempt ${latest.attempt} ${relativeTime(latest.createdAt)}`}
+                      {hint ?? t('dashboard.aboutMinutes', { n: exercise.estimatedMinutes })}
+                      {latest &&
+                        ` · ${t('dashboard.attemptWhen', {
+                          n: latest.attempt,
+                          when: relativeTime(latest.createdAt),
+                        })}`}
                     </p>
                   </div>
 
@@ -185,7 +202,7 @@ export default function StudentDashboard() {
                   ) : (
                     !locked && (
                       <span className="hidden text-sm font-medium text-indigo-600 sm:block">
-                        {state === 'revision' ? 'Try again →' : 'Start →'}
+                        {state === 'revision' ? t('dashboard.tryAgain') : t('dashboard.start')}
                       </span>
                     )
                   )}
@@ -205,33 +222,41 @@ export default function StudentDashboard() {
         </div>
 
         <aside className="space-y-6">
-          <Panel title="How you're scored">
+          {earnedCount(achievements) > 0 && (
+            <Panel
+              title={t('achievements.title')}
+              subtitle={t('achievements.subtitle', {
+                earned: earnedCount(achievements),
+                total: achievements.length,
+              })}
+              action={
+                <Link to="/progress" className="text-xs font-medium text-indigo-600 hover:underline">
+                  {t('achievements.viewAll')}
+                </Link>
+              }
+            >
+              {/* The dashboard shows the most recent few; the progress page has
+                  the full set, earned and not. */}
+              <AchievementGrid achievements={achievements} limit={3} columns={1} />
+            </Panel>
+          )}
+
+          <Panel title={t('dashboard.howScored')}>
             <RubricLegend />
             <p className="mt-4 border-t border-ink-200 pt-3 text-xs leading-relaxed text-ink-500">
-              A weighted total of {PASSING_SCORE} or above clears the bar. Your teacher makes the
-              final call and can adjust any score. Some exercises weight the dimensions
-              differently — the workspace shows that exercise's own weights.
+              {t('dashboard.passNote', { passing: PASSING_SCORE })}
             </p>
           </Panel>
 
-          <Panel title="How progression works">
+          <Panel title={t('dashboard.howProgression')}>
             <ul className="space-y-2.5 text-xs leading-relaxed text-ink-600">
-              <li>
-                <span className="font-medium text-ink-800">1.</span> Write and test your prompt as
-                many times as you like — test runs are not graded.
-              </li>
-              <li>
-                <span className="font-medium text-ink-800">2.</span> Submit with a reflection.
-                Claude scores it immediately.
-              </li>
-              <li>
-                <span className="font-medium text-ink-800">3.</span> Your teacher reviews the score
-                and either approves it or asks for another attempt.
-              </li>
-              <li>
-                <span className="font-medium text-ink-800">4.</span> Approval unlocks the next
-                exercise, whichever path it is in.
-              </li>
+              {(['dashboard.step1', 'dashboard.step2', 'dashboard.step3', 'dashboard.step4'] as const).map(
+                (key, i) => (
+                  <li key={key}>
+                    <span className="font-medium text-ink-800">{i + 1}.</span> {t(key)}
+                  </li>
+                ),
+              )}
             </ul>
           </Panel>
         </aside>

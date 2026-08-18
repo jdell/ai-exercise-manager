@@ -1,7 +1,12 @@
 import type { ReactNode } from 'react';
 import { Link } from 'react-router-dom';
+import { useLocale } from '../context/LocaleContext';
+import { LOCALES, activeLocale, tActive } from '../lib/i18n';
+import { ACHIEVEMENT_ICON, sortAchievements } from '../lib/achievements';
 import type {
+  Achievement,
   Difficulty,
+  Locale,
   ExerciseState,
   IntegrityReport,
   IntegritySeverity,
@@ -12,7 +17,7 @@ import type {
   SubmissionStatus,
 } from '../types';
 import { RUBRIC, RUBRIC_BY_KEY, PASSING_SCORE, DEFAULT_WEIGHTS } from '../data/rubric';
-import { DIFFICULTY_LABEL, DIFFICULTY_STYLE, PATH_BY_ID } from '../data/paths';
+import { DIFFICULTY_STYLE, PATH_BY_ID } from '../data/paths';
 import { INTEGRITY_LABELS, peakSeverity } from '../lib/integrity';
 import { DISAGREEMENT_THRESHOLD, modelDisagreement } from '../lib/calibration';
 import type { PartialEvaluation } from '../lib/partial-json';
@@ -21,36 +26,41 @@ import type { PartialEvaluation } from '../lib/partial-json';
 // Badges
 // ---------------------------------------------------------------------------
 
-const STATE_STYLES: Record<ExerciseState, { label: string; className: string }> = {
-  locked: { label: 'Locked', className: 'bg-ink-100 text-ink-500 border-ink-200' },
-  available: { label: 'Available', className: 'bg-indigo-50 text-indigo-700 border-indigo-200' },
-  in_review: { label: 'In review', className: 'bg-amber-50 text-amber-700 border-amber-200' },
-  revision: { label: 'Needs revision', className: 'bg-rose-50 text-rose-700 border-rose-200' },
-  approved: { label: 'Approved', className: 'bg-emerald-50 text-emerald-700 border-emerald-200' },
+/** Colour only — the words come from the dictionary, keyed by the same value. */
+const STATE_STYLES: Record<ExerciseState, string> = {
+  locked: 'bg-ink-100 text-ink-500 border-ink-200',
+  available: 'bg-indigo-50 text-indigo-700 border-indigo-200',
+  in_review: 'bg-amber-50 text-amber-700 border-amber-200',
+  revision: 'bg-rose-50 text-rose-700 border-rose-200',
+  approved: 'bg-emerald-50 text-emerald-700 border-emerald-200',
 };
 
 export function StateBadge({ state }: { state: ExerciseState }) {
-  const { label, className } = STATE_STYLES[state];
+  const { t } = useLocale();
   return (
-    <span className={`inline-flex items-center rounded-full border px-2.5 py-0.5 text-xs font-medium ${className}`}>
-      {label}
+    <span
+      className={`inline-flex items-center rounded-full border px-2.5 py-0.5 text-xs font-medium ${STATE_STYLES[state]}`}
+    >
+      {t(`state.${state}`)}
     </span>
   );
 }
 
-const STATUS_STYLES: Record<SubmissionStatus, { label: string; className: string }> = {
-  evaluating: { label: 'Evaluating', className: 'bg-sky-50 text-sky-700 border-sky-200' },
-  awaiting_review: { label: 'Awaiting review', className: 'bg-amber-50 text-amber-700 border-amber-200' },
-  approved: { label: 'Approved', className: 'bg-emerald-50 text-emerald-700 border-emerald-200' },
-  needs_revision: { label: 'Revision requested', className: 'bg-rose-50 text-rose-700 border-rose-200' },
-  error: { label: 'Failed', className: 'bg-ink-100 text-ink-600 border-ink-300' },
+const STATUS_STYLES: Record<SubmissionStatus, string> = {
+  evaluating: 'bg-sky-50 text-sky-700 border-sky-200',
+  awaiting_review: 'bg-amber-50 text-amber-700 border-amber-200',
+  approved: 'bg-emerald-50 text-emerald-700 border-emerald-200',
+  needs_revision: 'bg-rose-50 text-rose-700 border-rose-200',
+  error: 'bg-ink-100 text-ink-600 border-ink-300',
 };
 
 export function StatusBadge({ status }: { status: SubmissionStatus }) {
-  const { label, className } = STATUS_STYLES[status];
+  const { t } = useLocale();
   return (
-    <span className={`inline-flex items-center rounded-full border px-2.5 py-0.5 text-xs font-medium ${className}`}>
-      {label}
+    <span
+      className={`inline-flex items-center rounded-full border px-2.5 py-0.5 text-xs font-medium ${STATUS_STYLES[status]}`}
+    >
+      {t(`status.${status}`)}
     </span>
   );
 }
@@ -113,6 +123,7 @@ export function ScoreBar({
   score: number;
   overridden?: boolean;
 }) {
+  const { t } = useLocale();
   return (
     <div>
       <div className="mb-1 flex items-baseline justify-between gap-2">
@@ -121,7 +132,7 @@ export function ScoreBar({
           <span className="ml-1.5 text-xs font-normal text-ink-400">{Math.round(weight * 100)}%</span>
           {overridden && (
             <span className="ml-1.5 rounded bg-indigo-100 px-1.5 py-0.5 text-[10px] font-semibold tracking-wide text-indigo-700 uppercase">
-              Teacher
+              {t('common.teacherBadge')}
             </span>
           )}
         </span>
@@ -149,6 +160,7 @@ export function RubricBreakdown({
   /** Per-exercise weights; defaults to the rubric's own. */
   weights?: Record<RubricKey, number>;
 }) {
+  const { t } = useLocale();
   return (
     <div className="space-y-4">
       {RUBRIC.map((dim) => {
@@ -157,14 +169,17 @@ export function RubricBreakdown({
         return (
           <div key={dim.key}>
             <ScoreBar
-              label={dim.label}
+              label={t(`rubric.${dim.key}.label`)}
               weight={weights[dim.key] ?? dim.weight}
               score={value}
               overridden={override !== undefined}
             />
             {override !== undefined && override !== scores[dim.key] && (
               <p className="mt-1 text-xs text-ink-500">
-                Claude scored {scores[dim.key]}; your teacher adjusted this to {override}.
+                {t('common.teacherAdjusted', {
+                  claude: scores[dim.key] ?? 0,
+                  teacher: override,
+                })}
               </p>
             )}
             {rationale?.[dim.key] && (
@@ -182,17 +197,20 @@ export function RubricLegend({
 }: {
   weights?: Record<RubricKey, number>;
 }) {
+  const { t } = useLocale();
   return (
     <dl className="space-y-3">
       {RUBRIC.map((dim) => (
         <div key={dim.key}>
           <dt className="text-sm font-medium text-ink-800">
-            {dim.label}
+            {t(`rubric.${dim.key}.label`)}
             <span className="ml-1.5 text-xs font-normal text-ink-400">
               {Math.round((weights[dim.key] ?? dim.weight) * 100)}%
             </span>
           </dt>
-          <dd className="mt-0.5 text-xs leading-relaxed text-ink-600">{dim.description}</dd>
+          <dd className="mt-0.5 text-xs leading-relaxed text-ink-600">
+            {t(`rubric.${dim.key}.description`)}
+          </dd>
         </div>
       ))}
     </dl>
@@ -201,6 +219,39 @@ export function RubricLegend({
 
 export function scoreLabel(key: RubricKey): string {
   return RUBRIC_BY_KEY[key].label;
+}
+
+// ---------------------------------------------------------------------------
+// Language
+// ---------------------------------------------------------------------------
+
+/**
+ * The language switch.
+ *
+ * A `<select>` rather than a pair of flags: a flag names a country, and neither
+ * of these languages belongs to one. It appears in the header *and* on the
+ * sign-in screen, because a student who cannot read the app cannot sign in to
+ * reach the setting that would fix that.
+ */
+export function LanguagePicker({ className = '' }: { className?: string }) {
+  const { locale, setLocale, t } = useLocale();
+  return (
+    <label className={`flex items-center ${className}`}>
+      <span className="sr-only">{t('layout.language')}</span>
+      <select
+        value={locale}
+        onChange={(e) => setLocale(e.target.value as Locale)}
+        className="rounded-lg border border-ink-300 bg-white px-2 py-1 text-xs font-medium text-ink-700 hover:bg-ink-50 focus:border-indigo-500 focus:ring-2 focus:ring-indigo-100 focus:outline-none"
+        title={t('layout.language')}
+      >
+        {LOCALES.map((option) => (
+          <option key={option.id} value={option.id}>
+            {option.label}
+          </option>
+        ))}
+      </select>
+    </label>
+  );
 }
 
 // ---------------------------------------------------------------------------
@@ -278,16 +329,21 @@ export function Alert({
   );
 }
 
+/**
+ * Reads the active locale rather than taking a translator, because it is called
+ * from chart data and table cells built during render, where threading one
+ * through every call site would be all cost and no clarity. See `lib/i18n.ts`.
+ */
 export function relativeTime(timestamp: number): string {
   const seconds = Math.round((Date.now() - timestamp) / 1000);
-  if (seconds < 60) return 'just now';
+  if (seconds < 60) return tActive('time.justNow');
   const minutes = Math.round(seconds / 60);
-  if (minutes < 60) return `${minutes}m ago`;
+  if (minutes < 60) return tActive('time.minutes', { n: minutes });
   const hours = Math.round(minutes / 60);
-  if (hours < 24) return `${hours}h ago`;
+  if (hours < 24) return tActive('time.hours', { n: hours });
   const days = Math.round(hours / 24);
-  if (days < 7) return `${days}d ago`;
-  return new Date(timestamp).toLocaleDateString();
+  if (days < 7) return tActive('time.days', { n: days });
+  return new Date(timestamp).toLocaleDateString(activeLocale());
 }
 
 // ---------------------------------------------------------------------------
@@ -295,23 +351,25 @@ export function relativeTime(timestamp: number): string {
 // ---------------------------------------------------------------------------
 
 export function PathChip({ pathId, className = '' }: { pathId: PathId; className?: string }) {
+  const { t } = useLocale();
   const path = PATH_BY_ID[pathId];
   if (!path) return null;
   return (
     <span
       className={`inline-flex items-center rounded-full border px-2.5 py-0.5 text-xs font-medium ${path.accent} ${className}`}
     >
-      {path.title}
+      {t(`path.${pathId}.title`)}
     </span>
   );
 }
 
 export function DifficultyBadge({ difficulty }: { difficulty: Difficulty }) {
+  const { t } = useLocale();
   return (
     <span
       className={`inline-flex items-center rounded-full border px-2 py-0.5 text-[11px] font-medium ${DIFFICULTY_STYLE[difficulty]}`}
     >
-      {DIFFICULTY_LABEL[difficulty]}
+      {t(`difficulty.${difficulty}`)}
     </span>
   );
 }
@@ -324,7 +382,8 @@ export function DifficultyBadge({ difficulty }: { difficulty: Difficulty }) {
  * them on a character they cannot see. Over-budget is stated plainly instead.
  */
 export function CharCounter({ used, limit }: { used: number; limit?: number }) {
-  if (!limit) return <p className="hint tabular-nums">{used} chars</p>;
+  const { t } = useLocale();
+  if (!limit) return <p className="hint tabular-nums">{t('common.chars', { n: used })}</p>;
 
   const remaining = limit - used;
   const tone =
@@ -332,8 +391,10 @@ export function CharCounter({ used, limit }: { used: number; limit?: number }) {
 
   return (
     <p className={`text-xs tabular-nums ${tone}`}>
-      <span className="font-medium">{used}</span> / {limit} chars ·{' '}
-      {remaining >= 0 ? `${remaining} left` : `${Math.abs(remaining)} over budget`}
+      {t('common.charsBudget', { used, limit })} ·{' '}
+      {remaining >= 0
+        ? t('common.charsLeft', { n: remaining })
+        : t('common.charsOver', { n: Math.abs(remaining) })}
     </p>
   );
 }
@@ -364,6 +425,7 @@ export function RevisionTimeline({
   /** Builds a link target per attempt; omit to render inert nodes. */
   linkTo?: (submission: Submission) => string;
 }) {
+  const { t } = useLocale();
   if (attempts.length === 0) return null;
 
   const scored = attempts.filter((a) => attemptScore(a) !== undefined);
@@ -395,13 +457,15 @@ export function RevisionTimeline({
               }`}
             >
               <div className="flex items-center justify-between gap-2">
-                <span className="text-xs font-medium text-ink-500">Attempt {attempt.attempt}</span>
+                <span className="text-xs font-medium text-ink-500">
+                  {t('common.attemptN', { n: attempt.attempt })}
+                </span>
                 {delta !== undefined && delta !== 0 && (
                   <span
                     className={`rounded px-1.5 py-0.5 text-[11px] font-semibold tabular-nums ${
                       delta > 0 ? 'bg-emerald-100 text-emerald-700' : 'bg-rose-100 text-rose-700'
                     }`}
-                    title="Change from the previous attempt"
+                    title={t('workspace.deltaTitle')}
                   >
                     {delta > 0 ? `+${delta}` : delta}
                   </span>
@@ -437,19 +501,11 @@ export function RevisionTimeline({
 
       {overall !== undefined && (
         <p className="mt-2 text-xs text-ink-500">
-          {overall > 0 ? (
-            <>
-              Up <span className="font-semibold text-emerald-600">{overall} points</span> from your
-              first attempt.
-            </>
-          ) : overall < 0 ? (
-            <>
-              Down <span className="font-semibold text-rose-600">{Math.abs(overall)} points</span>{' '}
-              from your first attempt.
-            </>
-          ) : (
-            'Same score as your first attempt.'
-          )}
+          {overall > 0
+            ? t('workspace.upFromFirst', { n: overall })
+            : overall < 0
+              ? t('workspace.downFromFirst', { n: Math.abs(overall) })
+              : t('workspace.sameAsFirst')}
         </p>
       )}
     </div>
@@ -488,6 +544,7 @@ export function LiveEvaluation({
   stage: string;
   weights?: Record<RubricKey, number>;
 }) {
+  const { t } = useLocale();
   const anyScore = RUBRIC.some((dim) => partial.scores[dim.key] !== undefined);
 
   return (
@@ -504,7 +561,9 @@ export function LiveEvaluation({
             if (score === undefined) {
               return (
                 <div key={dim.key} className="flex items-center gap-3">
-                  <span className="w-32 shrink-0 text-xs text-ink-400">{dim.label}</span>
+                  <span className="w-32 shrink-0 text-xs text-ink-400">
+                    {t(`rubric.${dim.key}.label`)}
+                  </span>
                   <span className="h-1.5 flex-1 animate-pulse rounded-full bg-ink-200" />
                 </div>
               );
@@ -512,7 +571,7 @@ export function LiveEvaluation({
             return (
               <ScoreBar
                 key={dim.key}
-                label={dim.label}
+                label={t(`rubric.${dim.key}.label`)}
                 weight={weights[dim.key] ?? dim.weight}
                 score={score}
               />
@@ -533,8 +592,16 @@ export function LiveEvaluation({
 
       {(partial.strengths.length > 0 || partial.improvements.length > 0) && (
         <div className="grid gap-4 border-t border-indigo-200/70 pt-3 sm:grid-cols-2">
-          <StreamedList title="Strengths" items={partial.strengths} tone="bg-emerald-500" />
-          <StreamedList title="Next time" items={partial.improvements} tone="bg-amber-500" />
+          <StreamedList
+            title={t('common.strengths')}
+            items={partial.strengths}
+            tone="bg-emerald-500"
+          />
+          <StreamedList
+            title={t('common.nextTime')}
+            items={partial.improvements}
+            tone="bg-amber-500"
+          />
         </div>
       )}
     </div>
@@ -554,6 +621,89 @@ function StreamedList({ title, items, tone }: { title: string; items: string[]; 
           </li>
         ))}
       </ul>
+    </div>
+  );
+}
+
+// ---------------------------------------------------------------------------
+// Badges
+// ---------------------------------------------------------------------------
+
+/**
+ * One badge. Unearned badges are shown greyed rather than hidden, with their
+ * progress where there is any: a locked badge a student can see the shape of is
+ * a goal, and one they cannot is a surprise.
+ */
+function AchievementCard({ achievement }: { achievement: Achievement }) {
+  const { t } = useLocale();
+  const { id, pathId, vars, earned, earnedAt, progress } = achievement;
+
+  // Path badges exist once per path, so their sentence needs the path's name —
+  // and it has to be the translated one, not the constant in data/paths.ts.
+  const copyVars = { ...vars, ...(pathId ? { path: t(`path.${pathId}.title`) } : {}) };
+
+  return (
+    <div
+      className={`flex gap-3 rounded-lg border p-3.5 transition-colors ${
+        earned ? 'border-indigo-200 bg-indigo-50/50' : 'border-ink-200 bg-white'
+      }`}
+    >
+      <span
+        aria-hidden="true"
+        className={`grid h-9 w-9 shrink-0 place-items-center rounded-lg text-lg ${
+          earned ? 'bg-white' : 'bg-ink-100 opacity-40 grayscale'
+        }`}
+      >
+        {ACHIEVEMENT_ICON[id]}
+      </span>
+      <div className="min-w-0 flex-1">
+        <p className={`text-sm font-medium ${earned ? 'text-ink-900' : 'text-ink-500'}`}>
+          {t(`achievement.${id}.title`, copyVars)}
+        </p>
+        <p className="mt-0.5 text-xs leading-relaxed text-ink-500">
+          {t(`achievement.${id}.description`, copyVars)}
+        </p>
+        {earned && earnedAt ? (
+          <p className="mt-1.5 text-[11px] text-ink-400">
+            {t('achievements.earnedWhen', { when: relativeTime(earnedAt) })}
+          </p>
+        ) : progress !== undefined && progress > 0 ? (
+          <div className="mt-2 h-1 w-full overflow-hidden rounded-full bg-ink-200">
+            <div
+              className="h-full rounded-full bg-ink-400 transition-all duration-500"
+              style={{ width: `${Math.round(progress * 100)}%` }}
+            />
+          </div>
+        ) : (
+          <p className="mt-1.5 text-[11px] text-ink-400">{t('achievements.locked')}</p>
+        )}
+      </div>
+    </div>
+  );
+}
+
+export function AchievementGrid({
+  achievements,
+  limit,
+  columns = 2,
+}: {
+  achievements: Achievement[];
+  /** Show only the first N after sorting. Omit for all of them. */
+  limit?: number;
+  /** 1 in a sidebar, 2 in a main column. */
+  columns?: 1 | 2;
+}) {
+  const sorted = sortAchievements(achievements);
+  const shown = limit ? sorted.slice(0, limit) : sorted;
+
+  return (
+    <div className={`grid gap-3 ${columns === 2 ? 'sm:grid-cols-2' : ''}`}>
+      {shown.map((achievement) => (
+        <AchievementCard
+          key={`${achievement.id}:${achievement.pathId ?? ''}`}
+          achievement={achievement}
+        />
+      ))}
     </div>
   );
 }

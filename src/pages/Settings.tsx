@@ -1,94 +1,105 @@
 import { useSession } from '../context/SessionContext';
+import { useLocale } from '../context/LocaleContext';
 import { isFirebaseConfigured, usingEmulators } from '../lib/firebase';
+import { LOCALES } from '../lib/i18n';
 import { Alert, Panel } from '../components/ui';
+import type { Locale } from '../types';
 
 export default function Settings() {
   const { session, signOut } = useSession();
+  const { locale, setLocale, t } = useLocale();
 
   return (
     <div className="mx-auto max-w-2xl space-y-6">
       <div>
-        <h1 className="text-2xl font-semibold text-ink-900">Settings</h1>
-        <p className="mt-1 text-sm text-ink-500">Your account and how this app is wired up.</p>
+        <h1 className="text-2xl font-semibold text-ink-900">{t('settings.title')}</h1>
+        <p className="mt-1 text-sm text-ink-500">{t('settings.subtitle')}</p>
       </div>
 
-      <Panel title="Account">
+      <Panel title={t('settings.account')}>
         <dl className="divide-y divide-ink-100 text-sm">
-          <Row label="Name" value={session?.name ?? '—'} />
-          <Row label="Email" value={session?.email || '—'} />
+          <Row label={t('settings.name')} value={session?.name ?? '—'} />
+          <Row label={t('settings.email')} value={session?.email || '—'} />
           <Row
-            label="Role"
+            label={t('settings.role')}
             value={
-              <span className="capitalize">
-                {session?.role ?? '—'}
-                <span className="ml-2 text-xs text-ink-400">set at sign-up</span>
+              <span>
+                {session ? t(`role.${session.role}`) : '—'}
+                <span className="ml-2 text-xs text-ink-400">{t('settings.roleSetAtSignup')}</span>
               </span>
             }
           />
           <Row
-            label="User ID"
+            label={t('settings.userId')}
             value={<code className="font-mono text-xs">{session?.id ?? '—'}</code>}
           />
         </dl>
-        <p className="hint mt-4">
-          Your role is stored on your profile record and can only be changed by someone with
-          database access — it is not something this page, or any page, can switch.
-        </p>
+        <p className="hint mt-4">{t('settings.roleNote')}</p>
       </Panel>
 
-      <Panel title="Anthropic API key" subtitle="Held by the server, not by this browser.">
-        <Alert tone="success">
-          Nothing to configure here. Prompts and grading run in a Cloud Function that reads{' '}
-          <code className="font-mono text-xs">ANTHROPIC_API_KEY</code> from Firebase Secret Manager.
-        </Alert>
-        <p className="hint mt-4">
-          Earlier versions of this app called the Anthropic API straight from the browser, which
-          meant whatever key was in use could be read out of devtools. That path is gone: the
-          browser now calls <code className="font-mono text-xs">runPrompt</code> and{' '}
-          <code className="font-mono text-xs">evaluateSubmission</code>, and the key never leaves
-          the server.
-        </p>
+      {/*
+        The same switch as the header, with room for the explanation the header
+        has no space for — in particular that the choice travels with a
+        submission and comes back in Claude's feedback.
+      */}
+      <Panel title={t('settings.language')} subtitle={t('settings.languageSubtitle')}>
+        <div className="flex flex-wrap gap-2">
+          {LOCALES.map((option) => (
+            <button
+              key={option.id}
+              onClick={() => setLocale(option.id as Locale)}
+              aria-pressed={locale === option.id}
+              className={`rounded-lg border px-4 py-2 text-sm font-medium transition-colors ${
+                locale === option.id
+                  ? 'border-indigo-400 bg-indigo-50 text-indigo-800'
+                  : 'border-ink-300 bg-white text-ink-700 hover:bg-ink-50'
+              }`}
+            >
+              {option.label}
+            </button>
+          ))}
+        </div>
+        <p className="hint mt-4">{t('settings.languageNote')}</p>
       </Panel>
 
-      <Panel title="Environment">
+      <Panel title={t('settings.apiKey')} subtitle={t('settings.apiKeySubtitle')}>
+        <Alert tone="success">{t('settings.apiKeyBody')}</Alert>
+        <p className="hint mt-4">{t('settings.apiKeyNote')}</p>
+      </Panel>
+
+      <Panel title={t('settings.environment')}>
         <dl className="divide-y divide-ink-100 text-sm">
           <Row
-            label="Data store"
+            label={t('settings.dataStore')}
             value={
               isFirebaseConfigured ? (
-                <span className="text-emerald-700">Firebase Realtime Database</span>
+                <span className="text-emerald-700">{t('settings.dataStoreValue')}</span>
               ) : (
-                <span className="text-rose-700">Not configured</span>
+                <span className="text-rose-700">{t('settings.notConfigured')}</span>
               )
             }
           />
           <Row
-            label="Firebase config"
-            value={isFirebaseConfigured ? 'Present' : 'Missing — set VITE_FIREBASE_* variables'}
+            label={t('settings.firebaseConfig')}
+            value={isFirebaseConfigured ? t('settings.present') : t('settings.missing')}
           />
           <Row
-            label="Backend"
+            label={t('settings.backend')}
             value={
               usingEmulators ? (
-                <span className="text-amber-700">Local emulator suite</span>
+                <span className="text-amber-700">{t('settings.emulatorSuite')}</span>
               ) : (
-                'Deployed Firebase project'
+                t('settings.deployedProject')
               )
             }
           />
         </dl>
-        {usingEmulators && (
-          <p className="hint mt-4">
-            Auth, database, and functions are all served from{' '}
-            <code className="font-mono text-xs">firebase emulators:start</code> on this machine.
-            Nothing here touches your real project.
-          </p>
-        )}
+        {usingEmulators && <p className="hint mt-4">{t('settings.emulatorNote')}</p>}
       </Panel>
 
-      <Panel title="Session">
+      <Panel title={t('settings.session')}>
         <button onClick={() => void signOut()} className="btn-secondary">
-          Sign out
+          {t('nav.signOut')}
         </button>
       </Panel>
     </div>

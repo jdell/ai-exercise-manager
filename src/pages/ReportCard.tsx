@@ -1,8 +1,9 @@
 import { useMemo } from 'react';
 import { Link, Navigate, useParams } from 'react-router-dom';
 import { useSession } from '../context/SessionContext';
+import { useLocale } from '../context/LocaleContext';
 import { useExercises, useStudents, useSubmissions } from '../hooks/useData';
-import { PASSING_SCORE, RUBRIC } from '../data/rubric';
+import { PASSING_SCORE, RUBRIC_KEYS } from '../data/rubric';
 import { formatDuration, studentAnalytics } from '../lib/analytics';
 import { BarChart, TrendLine } from '../components/charts';
 import { EmptyState, relativeTime, scoreTone } from '../components/ui';
@@ -21,10 +22,15 @@ import { EmptyState, relativeTime, scoreTone } from '../components/ui';
  * mechanics and no integrity signals here — a report a guardian reads should
  * say what the student did and how they progressed, and nothing about how the
  * grading machinery works.
+ *
+ * It follows the reader's language, and that matters more here than anywhere
+ * else in the app: this is the one page that leaves the building. A guardian
+ * who reads Spanish should not be handed an English PDF about their child.
  */
 export default function ReportCard() {
   const { studentId } = useParams<{ studentId: string }>();
   const { session } = useSession();
+  const { t, tn, locale } = useLocale();
   const { submissions, loading } = useSubmissions();
   const { students } = useStudents();
   const { exercises, loading: exercisesLoading } = useExercises();
@@ -64,27 +70,24 @@ export default function ReportCard() {
           to={isTeacher ? '/teacher/analytics' : '/progress'}
           className="text-sm text-ink-500 hover:text-ink-800"
         >
-          ← Back
+          {t('report.back')}
         </Link>
         <button onClick={() => window.print()} className="btn-primary px-4 py-2 text-sm">
-          Save as PDF
+          {t('report.saveAsPdf')}
         </button>
       </div>
 
       {attempted.length === 0 ? (
-        <EmptyState title="No work to report yet">
-          This report fills in once {isTeacher ? 'this student has' : 'you have'} submitted an
-          exercise.
+        <EmptyState title={t('report.empty')}>
+          {isTeacher ? t('report.emptyTeacher') : t('report.emptyStudent')}
         </EmptyState>
       ) : (
         <article className="print-sheet card space-y-8 p-8">
           <header className="border-b border-ink-200 pb-5">
-            <p className="text-xs tracking-widest text-ink-500 uppercase">
-              Progress report · AI Skills
-            </p>
+            <p className="text-xs tracking-widest text-ink-500 uppercase">{t('report.kicker')}</p>
             <h1 className="mt-2 text-3xl font-semibold text-ink-900">{name}</h1>
             <p className="mt-1 text-sm text-ink-500">
-              {generated.toLocaleDateString(undefined, {
+              {generated.toLocaleDateString(locale, {
                 year: 'numeric',
                 month: 'long',
                 day: 'numeric',
@@ -94,14 +97,17 @@ export default function ReportCard() {
 
           <section>
             <h2 className="text-sm font-semibold tracking-wide text-ink-500 uppercase">
-              At a glance
+              {t('report.atAGlance')}
             </h2>
             <div className="mt-3 grid grid-cols-2 gap-4 sm:grid-cols-4">
-              <Figure label="Exercises completed" value={`${approved.length}/${data.exercises.length}`} />
-              <Figure label="Average score" value={data.averageScore || '—'} />
-              <Figure label="Submissions" value={data.totalAttempts} />
               <Figure
-                label="Typical turnaround"
+                label={t('report.exercisesCompleted')}
+                value={`${approved.length}/${data.exercises.length}`}
+              />
+              <Figure label={t('report.averageScore')} value={data.averageScore || '—'} />
+              <Figure label={t('report.submissions')} value={data.totalAttempts} />
+              <Figure
+                label={t('report.turnaround')}
                 value={formatDuration(data.medianTimeToApproval)}
                 small
               />
@@ -110,29 +116,26 @@ export default function ReportCard() {
 
           <section>
             <h2 className="text-sm font-semibold tracking-wide text-ink-500 uppercase">
-              What this course teaches
+              {t('report.whatThisTeaches')}
             </h2>
             <p className="mt-2 max-w-prose text-sm leading-relaxed text-ink-700">
-              Students write instructions for an AI model, test them, and reflect on why they
-              worked. Each piece of work is scored against a fixed rubric and then reviewed by a
-              teacher, who has the final say on every score. An exercise only unlocks the next one
-              once a teacher has approved it.
+              {t('report.whatThisTeachesBody')}
             </p>
           </section>
 
           {data.trend.length > 1 && (
             <section className="break-inside-avoid">
               <h2 className="text-sm font-semibold tracking-wide text-ink-500 uppercase">
-                Scores across the course
+                {t('report.scoresAcross')}
               </h2>
               <div className="mt-3">
                 <TrendLine
-                  points={data.trend.map((t) => ({
-                    label: String(t.order),
-                    sublabel: t.title,
-                    value: Math.round(t.score),
+                  points={data.trend.map((point) => ({
+                    label: String(point.order),
+                    sublabel: point.title,
+                    value: Math.round(point.score),
                   }))}
-                  barLabel={`Passing (${PASSING_SCORE})`}
+                  barLabel={t('report.passingLabel', { score: PASSING_SCORE })}
                 />
               </div>
             </section>
@@ -141,50 +144,41 @@ export default function ReportCard() {
           {data.velocity && (
             <section className="break-inside-avoid">
               <h2 className="text-sm font-semibold tracking-wide text-ink-500 uppercase">
-                Improvement
+                {t('report.improvement')}
               </h2>
               <p className="mt-2 max-w-prose text-sm leading-relaxed text-ink-700">
-                Across {data.velocity.sample} completed exercise
-                {data.velocity.sample === 1 ? '' : 's'}, {name.split(' ')[0]} scored an average of{' '}
-                <strong>{data.velocity.firstMean}</strong> on a first attempt and{' '}
-                <strong>{data.velocity.approvedMean}</strong> on the work that was finally
-                approved
-                {data.velocity.gain > 0 ? (
-                  <>
-                    {' '}
-                    — an improvement of <strong>{data.velocity.gain} points</strong> through
-                    revision
-                  </>
-                ) : (
-                  ''
-                )}
-                .{' '}
+                {tn('report.improvementLine', data.velocity.sample, {
+                  name: name.split(' ')[0],
+                  first: data.velocity.firstMean,
+                  approved: data.velocity.approvedMean,
+                })}
+                {data.velocity.gain > 0 && t('report.improvementGain', { n: data.velocity.gain })}.{' '}
                 {data.velocity.perAttempt === null
-                  ? 'Every exercise was approved on the first attempt.'
-                  : `Each revision was worth about ${data.velocity.perAttempt} points.`}
+                  ? t('report.improvementFirstTime')
+                  : t('report.improvementPerAttempt', { n: data.velocity.perAttempt })}
               </p>
             </section>
           )}
 
           <section className="break-inside-avoid">
             <h2 className="text-sm font-semibold tracking-wide text-ink-500 uppercase">
-              Skills breakdown
+              {t('report.skills')}
             </h2>
             <div className="mt-3">
               <BarChart
-                data={RUBRIC.map((dim) => ({
-                  label: dim.label,
-                  value: Math.round(data.dimensionMeans[dim.key]),
+                data={RUBRIC_KEYS.map((key) => ({
+                  label: t(`rubric.${key}.label`),
+                  value: Math.round(data.dimensionMeans[key]),
                   tone: 'score' as const,
                 }))}
                 labelWidth="w-36"
               />
             </div>
             <dl className="mt-4 space-y-2">
-              {RUBRIC.map((dim) => (
-                <div key={dim.key} className="text-sm">
-                  <dt className="inline font-medium text-ink-800">{dim.label}: </dt>
-                  <dd className="inline text-ink-600">{dim.description}</dd>
+              {RUBRIC_KEYS.map((key) => (
+                <div key={key} className="text-sm">
+                  <dt className="inline font-medium text-ink-800">{t(`rubric.${key}.label`)}: </dt>
+                  <dd className="inline text-ink-600">{t(`rubric.${key}.description`)}</dd>
                 </div>
               ))}
             </dl>
@@ -192,15 +186,15 @@ export default function ReportCard() {
 
           <section className="break-inside-avoid">
             <h2 className="text-sm font-semibold tracking-wide text-ink-500 uppercase">
-              Exercise by exercise
+              {t('report.exerciseByExercise')}
             </h2>
             <table className="mt-3 w-full text-sm">
               <thead>
                 <tr className="border-b border-ink-200 text-left">
-                  <th className="py-2 pr-4 font-medium text-ink-500">Exercise</th>
-                  <th className="py-2 pr-4 font-medium text-ink-500">Attempts</th>
-                  <th className="py-2 pr-4 font-medium text-ink-500">Score</th>
-                  <th className="py-2 font-medium text-ink-500">Status</th>
+                  <th className="py-2 pr-4 font-medium text-ink-500">{t('common.exercise')}</th>
+                  <th className="py-2 pr-4 font-medium text-ink-500">{t('common.attempts')}</th>
+                  <th className="py-2 pr-4 font-medium text-ink-500">{t('common.score')}</th>
+                  <th className="py-2 font-medium text-ink-500">{t('common.status')}</th>
                 </tr>
               </thead>
               <tbody>
@@ -218,7 +212,7 @@ export default function ReportCard() {
                       {e.bestScore !== undefined ? Math.round(e.bestScore) : '—'}
                     </td>
                     <td className="py-2 text-ink-600">
-                      {e.approved ? 'Completed' : 'In progress'}
+                      {e.approved ? t('report.completed') : t('report.inProgress')}
                     </td>
                   </tr>
                 ))}
@@ -228,10 +222,9 @@ export default function ReportCard() {
 
           <footer className="border-t border-ink-200 pt-4">
             <p className="text-xs leading-relaxed text-ink-500">
-              Scores are produced by an AI evaluator and reviewed by a teacher, who may adjust any
-              of them. The figures above reflect the teacher's final scores.
+              {t('report.footer')}
               {data.lastActivityAt !== null && (
-                <> Most recent activity {relativeTime(data.lastActivityAt)}.</>
+                <> {t('report.lastActivity', { when: relativeTime(data.lastActivityAt) })}</>
               )}
             </p>
           </footer>
