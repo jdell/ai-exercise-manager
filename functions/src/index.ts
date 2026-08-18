@@ -6,9 +6,11 @@ import * as logger from 'firebase-functions/logger';
 
 import type { Submission, UserProfile } from '../../src/types';
 import {
+  SECOND_OPINION_MODEL,
   describeClaudeError,
   evaluateSubmission as gradeSubmission,
   runStudentPrompt,
+  secondOpinion,
 } from './claude';
 import {
   db,
@@ -214,13 +216,31 @@ export const evaluateSubmission = onCall(
         await ref.update({ output, updatedAt: Date.now() });
       }
 
-      const evaluation = await gradeSubmission(
-        ANTHROPIC_API_KEY.value(),
-        exercise,
-        { ...submission, output },
-        await priorAttempts(submission),
-        onDelta,
-      );
+      const graded = { ...submission, output };
+      const history = await priorAttempts(submission);
+
+      // Both readers run concurrently. The second is strictly advisory, so its
+      // failure must never cost the student a grade: it swallows its own error
+      // and records it, rather than rejecting and taking the primary down.
+      const secondModel = SECOND_OPINION_MODEL;
+      const [evaluation, second] = await Promise.all([
+        gradeSubmission(ANTHROPIC_API_KEY.value(), exercise, graded, history, onDelta),
+        secondModel
+          ? secondOpinion(ANTHROPIC_API_KEY.value(), exercise, graded).catch((err) => {
+              logger.warn('secondOpinion failed', { submissionId, error: String(err) });
+              return {
+                model: secondModel,
+                scores: { promptQuality: 0, understanding: 0, execution: 0, growth: 0 },
+                weightedTotal: 0,
+                meetsBar: false,
+                note: '',
+                evaluatedAt: Date.now(),
+                error: describeClaudeError(err),
+              };
+            })
+          : Promise.resolve(undefined),
+      ]);
+      if (second) evaluation.secondOpinion = second;
       await sending;
 
       await ref.update({

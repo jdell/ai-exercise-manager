@@ -89,6 +89,12 @@
               ".validate": "newData.isNumber() && newData.val() >= 0 && newData.val() <= 100"
             }
           },
+          "blindScores": {
+            "$dimension": {
+              ".validate": "newData.isNumber() && newData.val() >= 0 && newData.val() <= 100"
+            }
+          },
+          "blindAt": { ".validate": "newData.isNumber()" },
           "$other": { ".validate": false }
         },
 

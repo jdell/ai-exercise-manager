@@ -1,8 +1,20 @@
 import type { ReactNode } from 'react';
 import { Link } from 'react-router-dom';
-import type { Difficulty, ExerciseState, PathId, RubricKey, Submission, SubmissionStatus } from '../types';
+import type {
+  Difficulty,
+  ExerciseState,
+  IntegrityReport,
+  IntegritySeverity,
+  PathId,
+  RubricKey,
+  SecondOpinion,
+  Submission,
+  SubmissionStatus,
+} from '../types';
 import { RUBRIC, RUBRIC_BY_KEY, PASSING_SCORE, DEFAULT_WEIGHTS } from '../data/rubric';
 import { DIFFICULTY_LABEL, DIFFICULTY_STYLE, PATH_BY_ID } from '../data/paths';
+import { INTEGRITY_LABELS, peakSeverity } from '../lib/integrity';
+import { DISAGREEMENT_THRESHOLD, modelDisagreement } from '../lib/calibration';
 import type { PartialEvaluation } from '../lib/partial-json';
 
 // ---------------------------------------------------------------------------
@@ -542,6 +554,174 @@ function StreamedList({ title, items, tone }: { title: string; items: string[]; 
           </li>
         ))}
       </ul>
+    </div>
+  );
+}
+
+// ---------------------------------------------------------------------------
+// Assessment quality (Phase 4)
+// ---------------------------------------------------------------------------
+
+const SEVERITY_STYLES: Record<IntegritySeverity, { label: string; className: string }> = {
+  info: { label: 'Note', className: 'bg-ink-100 text-ink-600 border-ink-300' },
+  warn: { label: 'Check', className: 'bg-amber-50 text-amber-700 border-amber-200' },
+  high: { label: 'Flag', className: 'bg-rose-50 text-rose-700 border-rose-200' },
+};
+
+/**
+ * Compact marker for the review queue. Renders nothing when a submission is
+ * clean, so the queue stays quiet unless there is something to look at.
+ */
+export function IntegrityBadge({ report }: { report?: IntegrityReport }) {
+  const severity = peakSeverity(report);
+  if (!severity || !report) return null;
+  const { className } = SEVERITY_STYLES[severity];
+  const count = report.flags.length;
+  return (
+    <span
+      className={`inline-flex items-center gap-1 rounded-full border px-2 py-0.5 text-xs font-medium ${className}`}
+      title={report.flags.map((f) => INTEGRITY_LABELS[f.code]).join(' · ')}
+    >
+      {count} {count === 1 ? 'signal' : 'signals'}
+    </span>
+  );
+}
+
+/**
+ * The full anti-gaming report. Leads with the disclaimer on purpose: these are
+ * heuristics, and a teacher who reads them as accusations will use them badly.
+ */
+export function IntegrityPanel({ report }: { report?: IntegrityReport }) {
+  if (!report || (!report.flags.length && !report.modelSuspects)) return null;
+
+  return (
+    <div className="space-y-3">
+      <p className="text-sm leading-relaxed text-ink-600">
+        Signals that this submission may satisfy the requirements without doing the underlying
+        work. These are heuristics, not findings — they change no score and block nothing. Read
+        the work and decide for yourself.
+      </p>
+
+      {report.modelSuspects && report.modelNote && (
+        <div className="rounded-lg border border-amber-200 bg-amber-50 px-3.5 py-3">
+          <p className="text-xs font-semibold tracking-wide text-amber-800 uppercase">
+            Claude's own read
+          </p>
+          <p className="mt-1 text-sm leading-relaxed text-amber-900">{report.modelNote}</p>
+        </div>
+      )}
+
+      <ul className="space-y-2">
+        {report.flags.map((flag) => (
+          <li
+            key={`${flag.code}-${flag.detail}`}
+            className="rounded-lg border border-ink-200 px-3.5 py-3"
+          >
+            <div className="flex flex-wrap items-center gap-2">
+              <span
+                className={`inline-flex items-center rounded-full border px-2 py-0.5 text-[10px] font-semibold tracking-wide uppercase ${SEVERITY_STYLES[flag.severity].className}`}
+              >
+                {SEVERITY_STYLES[flag.severity].label}
+              </span>
+              <span className="text-sm font-medium text-ink-800">
+                {INTEGRITY_LABELS[flag.code]}
+              </span>
+            </div>
+            <p className="mt-1.5 text-sm leading-relaxed text-ink-600">{flag.detail}</p>
+            {flag.evidence && (
+              <p className="mt-1.5 truncate font-mono text-xs text-ink-500">{flag.evidence}</p>
+            )}
+          </li>
+        ))}
+      </ul>
+    </div>
+  );
+}
+
+/**
+ * Where the two models disagree. Dimensions inside the threshold are shown
+ * greyed rather than hidden — "these two agreed" is information too, and
+ * hiding them would make every panel look like a dispute.
+ */
+export function SecondOpinionPanel({
+  primary,
+  primaryTotal,
+  second,
+}: {
+  primary: Record<RubricKey, number>;
+  primaryTotal: number;
+  second: SecondOpinion;
+}) {
+  if (second.error) {
+    return (
+      <p className="text-sm text-ink-500">
+        The second reader did not complete: {second.error}. The grade above stands on its own.
+      </p>
+    );
+  }
+
+  const deltas = modelDisagreement(primary, second.scores);
+  const contested = deltas.filter((d) => Math.abs(d.delta) >= DISAGREEMENT_THRESHOLD);
+  const totalGap = Math.round((second.weightedTotal - primaryTotal) * 10) / 10;
+
+  return (
+    <div className="space-y-4">
+      <div className="flex flex-wrap items-baseline gap-x-3 gap-y-1">
+        <span className="text-sm text-ink-600">
+          Second total{' '}
+          <span className={`font-semibold tabular-nums ${scoreTone(second.weightedTotal)}`}>
+            {second.weightedTotal}
+          </span>
+          <span className="ml-1.5 text-xs text-ink-500">
+            ({totalGap > 0 ? '+' : ''}
+            {totalGap} vs the graded score)
+          </span>
+        </span>
+        <span className="text-xs text-ink-400">{second.model}</span>
+      </div>
+
+      <div className="space-y-2.5">
+        {deltas.map(({ key, delta }) => {
+          const dim = RUBRIC_BY_KEY[key];
+          const disputed = Math.abs(delta) >= DISAGREEMENT_THRESHOLD;
+          return (
+            <div key={key} className="flex items-center justify-between gap-3">
+              <span className={`text-sm ${disputed ? 'font-medium text-ink-800' : 'text-ink-500'}`}>
+                {dim.label}
+              </span>
+              <span className="flex items-center gap-2 tabular-nums">
+                <span className="text-sm text-ink-500">{primary[key] ?? 0}</span>
+                <span aria-hidden="true" className="text-ink-300">
+                  →
+                </span>
+                <span className="text-sm text-ink-700">{second.scores[key]}</span>
+                <span
+                  className={`w-12 text-right text-xs font-semibold ${
+                    disputed ? (delta > 0 ? 'text-amber-600' : 'text-rose-600') : 'text-ink-400'
+                  }`}
+                >
+                  {delta > 0 ? '+' : ''}
+                  {delta}
+                </span>
+              </span>
+            </div>
+          );
+        })}
+      </div>
+
+      {second.note && (
+        <p className="rounded-lg bg-ink-50 px-3.5 py-3 text-sm leading-relaxed text-ink-700">
+          {second.note}
+        </p>
+      )}
+
+      <p className="hint">
+        {contested.length
+          ? `The readers are more than ${DISAGREEMENT_THRESHOLD} points apart on ${contested
+              .map((d) => RUBRIC_BY_KEY[d.key].label)
+              .join(' and ')}. That usually means the submission is genuinely ambiguous there.`
+          : 'Both readers landed within a few points on every dimension.'}
+      </p>
     </div>
   );
 }

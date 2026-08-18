@@ -7,8 +7,10 @@ import { describeError, evaluateSubmission } from '../lib/claude';
 import { saveReview } from '../lib/store';
 import {
   Alert,
+  IntegrityPanel,
   Panel,
   ScoreRing,
+  SecondOpinionPanel,
   Spinner,
   StatusBadge,
   relativeTime,
@@ -31,11 +33,27 @@ export default function TeacherReview() {
   const [error, setError] = useState('');
   const [seededFrom, setSeededFrom] = useState<string | null>(null);
 
+  /**
+   * Blind scoring. `blind` hides Claude's scores until the teacher commits
+   * their own, which is the only way the calibration delta means anything —
+   * a number entered next to Claude's is an adjustment, not a judgement.
+   *
+   * `blindScores` holds what they committed. It is recorded on the review and
+   * never overwritten by later adjustments, so the calibration record keeps the
+   * teacher's first independent read even after they change their mind.
+   */
+  const [blind, setBlind] = useState(false);
+  const [blindDraft, setBlindDraft] = useState<Partial<Record<RubricKey, number>>>({});
+  const [blindScores, setBlindScores] = useState<Partial<Record<RubricKey, number>> | null>(null);
+
   // Seed the form from an existing review when opening a reviewed submission.
   if (submission && seededFrom !== submission.id) {
     setSeededFrom(submission.id);
     setOverrides(submission.review?.overrides ?? {});
     setComment(submission.review?.comment ?? '');
+    setBlindScores(submission.review?.blindScores ?? null);
+    setBlindDraft(submission.review?.blindScores ?? {});
+    setBlind(false);
   }
 
   const priorAttempts = useMemo(
@@ -70,6 +88,39 @@ export default function TeacherReview() {
   const finalScore = weightedTotal(effective, weights);
   const changed = Object.keys(overrides).length > 0;
 
+  // The blind read, scored with the same weights so the gap is a disagreement
+  // and not an artefact of two different weightings.
+  const blindSource = blind ? blindDraft : (blindScores ?? {});
+  const blindEffective = RUBRIC.reduce<Record<RubricKey, number>>(
+    (acc, dim) => {
+      acc[dim.key] = blindSource[dim.key] ?? 70;
+      return acc;
+    },
+    {} as Record<RubricKey, number>,
+  );
+  const blindTotal = weightedTotal(blindEffective, weights);
+  const calibrationGap =
+    Math.round((blindTotal - (submission.evaluation?.weightedTotal ?? 0)) * 10) / 10;
+
+  function startBlind() {
+    // Seed from the midpoint rather than from Claude — pre-filling with the
+    // number we are trying to measure against would defeat the exercise.
+    setBlindDraft({});
+    setBlind(true);
+  }
+
+  function commitBlind() {
+    const committed = RUBRIC.reduce<Partial<Record<RubricKey, number>>>((acc, dim) => {
+      acc[dim.key] = blindDraft[dim.key] ?? 70;
+      return acc;
+    }, {});
+    setBlindScores(committed);
+    // Seed the adjustable scores from the teacher's own read, so the reveal
+    // shows their judgement next to Claude's rather than replacing it.
+    setOverrides(committed);
+    setBlind(false);
+  }
+
   async function decide(decision: 'approved' | 'revision') {
     if (!submission || !session) return;
     if (decision === 'revision' && !comment.trim()) {
@@ -88,6 +139,9 @@ export default function TeacherReview() {
           reviewedAt: Date.now(),
           reviewedBy: session.name,
           decision,
+          // Carried through untouched. Omitted entirely when this review was
+          // not scored blind, so calibration counts only real blind passes.
+          ...(blindScores ? { blindScores, blindAt: submission.review?.blindAt ?? Date.now() } : {}),
         },
       });
       navigate('/teacher');
@@ -177,7 +231,36 @@ export default function TeacherReview() {
             </p>
           </Panel>
 
-          {submission.evaluation && (
+          {blind && (
+            <Panel title="Claude's assessment" subtitle="Hidden until you commit your own scores">
+              <p className="text-sm leading-relaxed text-ink-600">
+                You are scoring blind. Claude's scores, its written feedback, and the second
+                reader are all hidden until you commit — an independent read is the only kind
+                worth measuring against.
+              </p>
+            </Panel>
+          )}
+
+          {!blind && submission.evaluation?.integrity && (
+            <Panel title="Integrity signals" subtitle="Advisory — changes no score">
+              <IntegrityPanel report={submission.evaluation.integrity} />
+            </Panel>
+          )}
+
+          {!blind && submission.evaluation?.secondOpinion && (
+            <Panel
+              title="Second reader"
+              subtitle="An independent pass on a faster model, for disagreement"
+            >
+              <SecondOpinionPanel
+                primary={submission.evaluation.scores}
+                primaryTotal={submission.evaluation.weightedTotal}
+                second={submission.evaluation.secondOpinion}
+              />
+            </Panel>
+          )}
+
+          {!blind && submission.evaluation && (
             <Panel
               title="Claude's assessment"
               subtitle={`${submission.evaluation.model} · ${relativeTime(submission.evaluation.evaluatedAt)}`}
@@ -229,7 +312,80 @@ export default function TeacherReview() {
 
         {/* Right: scoring */}
         <aside className="space-y-6 lg:sticky lg:top-20 lg:self-start">
-          <Panel title="Final score" subtitle={changed ? 'Adjusted from Claude' : "Claude's scores"}>
+          {blind ? (
+            <Panel
+              title="Your scores"
+              subtitle="Claude's are hidden. Commit to reveal and compare."
+            >
+              <div className="space-y-5">
+                {RUBRIC.map((dim) => {
+                  const value = blindDraft[dim.key] ?? 70;
+                  return (
+                    <div key={dim.key}>
+                      <div className="mb-1.5 flex items-baseline justify-between gap-2">
+                        <label
+                          htmlFor={`blind-${dim.key}`}
+                          className="text-sm font-medium text-ink-700"
+                        >
+                          {dim.label}
+                          <span className="ml-1.5 text-xs font-normal text-ink-400">
+                            {Math.round((weights[dim.key] ?? dim.weight) * 100)}%
+                          </span>
+                        </label>
+                        <span className={`text-sm font-semibold tabular-nums ${scoreTone(value)}`}>
+                          {value}
+                        </span>
+                      </div>
+                      <input
+                        id={`blind-${dim.key}`}
+                        type="range"
+                        min={0}
+                        max={100}
+                        step={1}
+                        value={value}
+                        onChange={(e) =>
+                          setBlindDraft((prev) => ({ ...prev, [dim.key]: Number(e.target.value) }))
+                        }
+                        className="w-full accent-indigo-600"
+                      />
+                      <p className="mt-1 text-xs leading-relaxed text-ink-500">{dim.description}</p>
+                    </div>
+                  );
+                })}
+              </div>
+
+              <div className="mt-5 flex items-center justify-between gap-3 border-t border-ink-200 pt-4">
+                <span className="text-sm text-ink-600">
+                  Your total{' '}
+                  <span className={`font-semibold tabular-nums ${scoreTone(blindTotal)}`}>
+                    {blindTotal}
+                  </span>
+                </span>
+                <button onClick={commitBlind} className="btn-primary px-3.5 py-1.5 text-sm">
+                  Commit &amp; reveal
+                </button>
+              </div>
+              <p className="hint mt-3">
+                Committing records these as your independent read and seeds the scores below. You
+                can still adjust afterwards — the blind scores stay as they were.
+              </p>
+            </Panel>
+          ) : (
+          <Panel
+            title="Final score"
+            subtitle={changed ? 'Adjusted from Claude' : "Claude's scores"}
+            action={
+              !submission.review && !blindScores && submission.evaluation ? (
+                <button
+                  onClick={startBlind}
+                  className="btn-secondary px-3 py-1.5 text-xs"
+                  title="Score this yourself before seeing Claude's scores"
+                >
+                  Score blind
+                </button>
+              ) : undefined
+            }
+          >
             <div className="mb-5 flex items-center gap-4">
               <ScoreRing score={finalScore} size={80} />
               <div>
@@ -295,7 +451,31 @@ export default function TeacherReview() {
                 );
               })}
             </div>
+
+            {blindScores && submission.evaluation && (
+              <div className="mt-5 border-t border-ink-200 pt-4">
+                <p className="text-xs font-semibold tracking-wide text-ink-500 uppercase">
+                  Your blind read
+                </p>
+                <p className="mt-1.5 text-sm text-ink-700">
+                  You scored{' '}
+                  <span className={`font-semibold tabular-nums ${scoreTone(blindTotal)}`}>
+                    {blindTotal}
+                  </span>{' '}
+                  before seeing Claude's {submission.evaluation.weightedTotal} —{' '}
+                  <span className="font-medium">
+                    {calibrationGap > 0 ? '+' : ''}
+                    {calibrationGap}
+                  </span>
+                  .
+                </p>
+                <p className="hint mt-1.5">
+                  Recorded as-is when you decide. Adjusting the scores above does not change it.
+                </p>
+              </div>
+            )}
           </Panel>
+          )}
 
           <Panel title="Comment to the student" subtitle="Required when requesting a revision.">
             <textarea
@@ -308,7 +488,7 @@ export default function TeacherReview() {
             <div className="mt-4 flex flex-col gap-2">
               <button
                 onClick={() => decide('approved')}
-                disabled={busy !== null}
+                disabled={busy !== null || blind}
                 className="btn-success w-full"
               >
                 {busy === 'approve' && <Spinner />}
@@ -316,7 +496,7 @@ export default function TeacherReview() {
               </button>
               <button
                 onClick={() => decide('revision')}
-                disabled={busy !== null}
+                disabled={busy !== null || blind}
                 className="btn-danger w-full"
               >
                 {busy === 'revision' && <Spinner />}
@@ -324,7 +504,9 @@ export default function TeacherReview() {
               </button>
             </div>
             <p className="hint mt-3">
-              Approving records the score above and opens the next exercise for this student.
+              {blind
+                ? 'Commit your blind scores before deciding.'
+                : 'Approving records the score above and opens the next exercise for this student.'}
             </p>
           </Panel>
         </aside>
