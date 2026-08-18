@@ -1,79 +1,122 @@
-import { createContext, useCallback, useContext, useEffect, useMemo, useState } from 'react';
+import { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState } from 'react';
 import type { ReactNode } from 'react';
-import type { Role, Session } from '../types';
-import { newId, touchStudent, upsertStudent } from '../lib/store';
+import type { User } from 'firebase/auth';
+import type { Session, UserProfile } from '../types';
+import * as auth from '../lib/auth';
+import { subscribeProfile, touchProfile } from '../lib/store';
 
-const STORAGE_KEY = 'aiem:session:v1';
-
-export const TEACHER_PASSCODE = import.meta.env.VITE_TEACHER_PASSCODE || 'let-me-teach';
+/**
+ * The signed-in identity: a Firebase Auth credential plus the profile record
+ * that carries the role.
+ *
+ * Both halves are required. The credential proves who you are; the profile at
+ * /users/$uid says whether you are a student or a teacher, and it is written
+ * only by the createProfile Cloud Function. Nothing in the browser decides a
+ * role, which is why database rules can trust the same field.
+ */
 
 interface SessionContextValue {
   session: Session | null;
-  signIn: (role: Role, name: string, passcode?: string) => Promise<void>;
-  signOut: () => void;
-  switchRole: (role: Role) => void;
+  /** True until Firebase has resolved the credential and its profile. */
+  loading: boolean;
+  /** A sign-in level problem worth showing on the sign-in screen. */
+  authError: string;
+  signIn: (email: string, password: string) => Promise<void>;
+  signUp: (input: auth.SignUpInput) => Promise<void>;
+  signOut: () => Promise<void>;
 }
 
 const SessionContext = createContext<SessionContextValue | null>(null);
 
-function readStored(): Session | null {
-  try {
-    const raw = localStorage.getItem(STORAGE_KEY);
-    return raw ? (JSON.parse(raw) as Session) : null;
-  } catch {
-    return null;
-  }
-}
-
 export function SessionProvider({ children }: { children: ReactNode }) {
-  const [session, setSession] = useState<Session | null>(readStored);
+  const [user, setUser] = useState<User | null>(null);
+  const [profile, setProfile] = useState<UserProfile | null>(null);
+  const [loading, setLoading] = useState(true);
+  const [authError, setAuthError] = useState('');
+  /** Set while signUp is between "credential created" and "profile written". */
+  const provisioning = useRef(false);
+
+  useEffect(
+    () =>
+      auth.watchAuth((next) => {
+        setUser(next);
+        if (!next) {
+          setProfile(null);
+          setLoading(false);
+        } else {
+          setLoading(true);
+        }
+      }),
+    [],
+  );
 
   useEffect(() => {
-    if (session) localStorage.setItem(STORAGE_KEY, JSON.stringify(session));
-    else localStorage.removeItem(STORAGE_KEY);
-  }, [session]);
+    if (!user) return;
+    return subscribeProfile(
+      user.uid,
+      (next) => {
+        setProfile(next);
+        setLoading(false);
+        if (!next && !provisioning.current) {
+          // A credential with no profile has no role, so no route will admit
+          // it. Rather than leaving the person on a blank shell, drop them back
+          // to sign-in with an explanation.
+          setAuthError(
+            'That account has no profile yet. Ask your teacher to finish setting it up, then sign in again.',
+          );
+          void auth.signOut();
+        }
+      },
+      (err) => {
+        setProfile(null);
+        setLoading(false);
+        setAuthError(err.message);
+      },
+    );
+  }, [user]);
 
-  // Keep the student's presence record fresh so teachers see who is active.
-  // touchStudent rather than upsertStudent so a returning student's createdAt
-  // survives; the record itself is created by signIn.
+  const session = useMemo<Session | null>(
+    () =>
+      profile
+        ? {
+            id: profile.uid,
+            name: profile.displayName,
+            role: profile.role,
+            email: profile.email,
+          }
+        : null,
+    [profile],
+  );
+
+  // Keep presence fresh so the teacher's roster shows who is active.
   useEffect(() => {
-    if (session?.role !== 'student') return;
-    void touchStudent(session.id, session.name);
-  }, [session]);
+    if (session) void touchProfile(session.id);
+  }, [session?.id]); // eslint-disable-line react-hooks/exhaustive-deps
 
-  const signIn = useCallback(async (role: Role, name: string, passcode?: string) => {
-    const trimmed = name.trim();
-    if (!trimmed) throw new Error('Enter your name to continue.');
-
-    if (role !== 'student' && passcode !== TEACHER_PASSCODE) {
-      throw new Error('That passcode is not correct.');
-    }
-
-    if (role === 'student') {
-      // Returning students keep their id so their history follows them.
-      const prior = readStored();
-      const id =
-        prior?.role === 'student' && prior.name.toLowerCase() === trimmed.toLowerCase()
-          ? prior.id
-          : newId('stu');
-      const now = Date.now();
-      await upsertStudent({ id, name: trimmed, createdAt: now, lastSeenAt: now });
-      setSession({ role, id, name: trimmed });
-      return;
-    }
-
-    setSession({ role, id: newId(role === 'teacher' ? 'tch' : 'evl'), name: trimmed });
+  const signIn = useCallback(async (email: string, password: string) => {
+    setAuthError('');
+    await auth.signIn(email, password);
   }, []);
 
-  const signOut = useCallback(() => setSession(null), []);
+  const signUp = useCallback(async (input: auth.SignUpInput) => {
+    setAuthError('');
+    provisioning.current = true;
+    try {
+      const created = await auth.signUp(input);
+      setProfile(created);
+    } finally {
+      provisioning.current = false;
+    }
+  }, []);
 
-  const switchRole = useCallback((role: Role) => {
-    setSession((current) => (current ? { ...current, role } : current));
+  const signOut = useCallback(async () => {
+    setAuthError('');
+    await auth.signOut();
   }, []);
 
   const value = useMemo(
-    () => ({ session, signIn, signOut, switchRole }),
-    [session, signIn, signOut, switchRole],
+    () => ({ session, loading, authError, signIn, signUp, signOut }),
+    [session, loading, authError, signIn, signUp, signOut],
   );
 
   return <SessionContext.Provider value={value}>{children}</SessionContext.Provider>;

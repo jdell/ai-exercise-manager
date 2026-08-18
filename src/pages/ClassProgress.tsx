@@ -17,7 +17,7 @@ export default function ClassProgress() {
   const { submissions } = useSubmissions();
 
   const rows = students.map((student) => {
-    const progress = computeProgress(student.id, submissions);
+    const progress = computeProgress(student.uid, submissions);
     const approved = EXERCISES.filter((e) => progress.get(e.id)?.state === 'approved').length;
     const scores = EXERCISES.map((e) => progress.get(e.id)?.best ?? 0).filter((s) => s > 0);
     const average = scores.length
@@ -66,9 +66,9 @@ export default function ClassProgress() {
               </thead>
               <tbody>
                 {rows.map(({ student, progress, approved, average, pending }) => (
-                  <tr key={student.id} className="border-b border-ink-100 last:border-0">
+                  <tr key={student.uid} className="border-b border-ink-100 last:border-0">
                     <td className="py-2.5 pr-4">
-                      <span className="font-medium text-ink-900">{student.name}</span>
+                      <span className="font-medium text-ink-900">{student.displayName}</span>
                       <span className="ml-2 text-xs text-ink-400">
                         {approved}/{EXERCISES.length}
                         {pending > 0 && <span className="ml-1 text-amber-600">· {pending} in review</span>}

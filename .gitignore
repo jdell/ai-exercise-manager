@@ -19,4 +19,11 @@ yarn-error.log*
 
 .firebase
 firebase-debug.log
+database-debug.log
+ui-debug.log
 .firebaserc.local
+.runtimeconfig.json
+
+# Emulator secret values for the Cloud Functions.
+.secret.local
+functions/lib

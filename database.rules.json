@@ -1,22 +1,91 @@
 {
   "rules": {
-    ".read": true,
-    ".write": true,
+    ".read": false,
+    ".write": false,
 
-    "students": {
-      "$studentId": {
-        ".validate": "newData.hasChildren(['id', 'name', 'createdAt'])",
-        "name": { ".validate": "newData.isString() && newData.val().length <= 80" }
+    "users": {
+      ".read": "auth != null && root.child('users').child(auth.uid).child('role').val() === 'teacher'",
+      ".indexOn": ["role"],
+
+      "$uid": {
+        ".read": "auth != null && auth.uid === $uid",
+        ".write": "auth != null && auth.uid === $uid && data.exists() && newData.exists() && newData.child('role').val() === data.child('role').val() && newData.child('uid').val() === data.child('uid').val() && newData.child('createdAt').val() === data.child('createdAt').val()",
+        ".validate": "newData.hasChildren(['uid', 'email', 'displayName', 'role', 'createdAt'])",
+
+        "uid": { ".validate": "newData.val() === $uid" },
+        "email": { ".validate": "newData.isString() && newData.val().length <= 254" },
+        "displayName": {
+          ".validate": "newData.isString() && newData.val().length > 0 && newData.val().length <= 80"
+        },
+        "role": { ".validate": "newData.val() === 'student' || newData.val() === 'teacher'" },
+        "createdAt": { ".validate": "newData.isNumber()" },
+        "lastSeenAt": { ".validate": "newData.isNumber()" },
+        "$other": { ".validate": false }
       }
     },
 
     "submissions": {
       ".indexOn": ["studentId", "exerciseId", "status", "createdAt"],
+      ".read": "auth != null && (root.child('users').child(auth.uid).child('role').val() === 'teacher' || (query.orderByChild === 'studentId' && query.equalTo === auth.uid))",
+
       "$submissionId": {
-        ".validate": "newData.hasChildren(['id', 'studentId', 'exerciseId', 'prompt', 'status'])",
-        "prompt": { ".validate": "newData.isString() && newData.val().length <= 20000" },
-        "reflection": { ".validate": "newData.isString() && newData.val().length <= 20000" }
+        ".read": "auth != null && (data.child('studentId').val() === auth.uid || root.child('users').child(auth.uid).child('role').val() === 'teacher')",
+        ".write": "auth != null && !data.exists() && newData.exists() && root.child('users').child(auth.uid).child('role').val() === 'student' && newData.child('studentId').val() === auth.uid && newData.child('status').val() === 'evaluating' && newData.child('output').val() === '' && !newData.hasChild('evaluation') && !newData.hasChild('review') && !newData.hasChild('error')",
+        ".validate": "newData.hasChildren(['id', 'studentId', 'studentName', 'exerciseId', 'exerciseOrder', 'attempt', 'prompt', 'reflection', 'output', 'status', 'createdAt', 'updatedAt'])",
+
+        "id": { ".validate": "newData.val() === $submissionId" },
+        "studentId": { ".validate": "newData.val() === auth.uid" },
+        "studentName": {
+          ".validate": "newData.val() === root.child('users').child(auth.uid).child('displayName').val()"
+        },
+        "exerciseId": { ".validate": "newData.isString() && newData.val().length <= 120" },
+        "exerciseOrder": { ".validate": "newData.isNumber()" },
+        "attempt": { ".validate": "newData.isNumber() && newData.val() >= 1" },
+        "prompt": {
+          ".validate": "newData.isString() && newData.val().length > 0 && newData.val().length <= 20000"
+        },
+        "reflection": { ".validate": "newData.isString() && newData.val().length <= 20000" },
+        "output": { ".validate": "newData.isString()" },
+        "createdAt": { ".validate": "newData.isNumber()" },
+        "error": { ".validate": "newData.isString() && newData.val().length <= 4000" },
+
+        "status": {
+          ".write": "auth != null && root.child('users').child(auth.uid).child('role').val() === 'teacher' && (newData.val() === 'approved' || newData.val() === 'needs_revision')",
+          ".validate": "newData.val() === 'evaluating' || newData.val() === 'awaiting_review' || newData.val() === 'approved' || newData.val() === 'needs_revision' || newData.val() === 'error'"
+        },
+
+        "updatedAt": {
+          ".write": "auth != null && root.child('users').child(auth.uid).child('role').val() === 'teacher'",
+          ".validate": "newData.isNumber()"
+        },
+
+        "review": {
+          ".write": "auth != null && root.child('users').child(auth.uid).child('role').val() === 'teacher'",
+          ".validate": "newData.hasChildren(['finalScore', 'comment', 'reviewedAt', 'reviewedBy', 'decision'])",
+          "finalScore": {
+            ".validate": "newData.isNumber() && newData.val() >= 0 && newData.val() <= 100"
+          },
+          "comment": { ".validate": "newData.isString() && newData.val().length <= 4000" },
+          "reviewedAt": { ".validate": "newData.isNumber()" },
+          "reviewedBy": { ".validate": "newData.isString() && newData.val().length <= 80" },
+          "decision": { ".validate": "newData.val() === 'approved' || newData.val() === 'revision'" },
+          "overrides": {
+            "$dimension": {
+              ".validate": "newData.isNumber() && newData.val() >= 0 && newData.val() <= 100"
+            }
+          },
+          "$other": { ".validate": false }
+        },
+
+        "evaluation": { ".validate": true },
+
+        "$other": { ".validate": false }
       }
+    },
+
+    "exercises": {
+      ".read": "auth != null",
+      ".write": false
     }
   }
 }

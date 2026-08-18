@@ -1,19 +1,16 @@
 import { Navigate, NavLink, Outlet, useNavigate } from 'react-router-dom';
 import { useSession } from '../context/SessionContext';
-import { storageMode } from '../lib/store';
-import { hasApiKey } from '../lib/claude';
+import { usingEmulators } from '../lib/firebase';
 import type { Role } from '../types';
 
 const ROLE_LABEL: Record<Role, string> = {
   student: 'Student',
   teacher: 'Teacher',
-  evaluator: 'Claude Evaluator',
 };
 
 const ROLE_ACCENT: Record<Role, string> = {
   student: 'bg-indigo-100 text-indigo-700',
   teacher: 'bg-emerald-100 text-emerald-700',
-  evaluator: 'bg-violet-100 text-violet-700',
 };
 
 const NAV: Record<Role, { to: string; label: string }[]> = {
@@ -24,12 +21,12 @@ const NAV: Record<Role, { to: string; label: string }[]> = {
   teacher: [
     { to: '/teacher', label: 'Review queue' },
     { to: '/teacher/class', label: 'Class progress' },
+    { to: '/evaluator', label: 'Evaluator console' },
   ],
-  evaluator: [{ to: '/evaluator', label: 'Evaluator console' }],
 };
 
 export default function Layout() {
-  const { session, signOut, switchRole } = useSession();
+  const { session, signOut } = useSession();
   const navigate = useNavigate();
 
   // Layout wraps every authenticated route, so the signed-out redirect has to
@@ -37,14 +34,13 @@ export default function Layout() {
   if (!session) return <Navigate to="/signin" replace />;
 
   const links = NAV[session.role];
-  const canSwitch = session.role !== 'student';
 
   return (
     <div className="flex min-h-full flex-col">
       <header className="sticky top-0 z-20 border-b border-ink-200 bg-white/90 backdrop-blur-sm">
         <div className="mx-auto flex h-14 max-w-7xl items-center gap-4 px-4 sm:px-6">
           <button
-            onClick={() => navigate(session.role === 'student' ? '/' : `/${session.role}`)}
+            onClick={() => navigate(session.role === 'teacher' ? '/teacher' : '/')}
             className="flex items-center gap-2.5 text-left"
           >
             <span
@@ -79,42 +75,24 @@ export default function Layout() {
           </nav>
 
           <div className="ml-auto flex items-center gap-2">
-            {!hasApiKey() && (
-              <NavLink
-                to="/settings"
-                className="hidden rounded-full border border-amber-300 bg-amber-50 px-2.5 py-1 text-xs font-medium text-amber-800 hover:bg-amber-100 md:block"
-              >
-                No API key
-              </NavLink>
-            )}
-            {storageMode === 'local' && (
+            {usingEmulators && (
               <span
-                title="Firebase is not configured. Data is stored in this browser only."
+                title="Talking to the local Firebase emulator suite, not your real project."
                 className="hidden rounded-full border border-ink-300 bg-ink-50 px-2.5 py-1 text-xs font-medium text-ink-600 lg:block"
               >
-                Local storage
+                Emulators
               </span>
             )}
 
-            {canSwitch ? (
-              <select
-                aria-label="Switch role"
-                value={session.role}
-                onChange={(e) => {
-                  const role = e.target.value as Role;
-                  switchRole(role);
-                  navigate(role === 'teacher' ? '/teacher' : '/evaluator');
-                }}
-                className={`cursor-pointer rounded-full border-0 px-2.5 py-1 text-xs font-medium ${ROLE_ACCENT[session.role]}`}
-              >
-                <option value="teacher">Teacher</option>
-                <option value="evaluator">Claude Evaluator</option>
-              </select>
-            ) : (
-              <span className={`rounded-full px-2.5 py-1 text-xs font-medium ${ROLE_ACCENT[session.role]}`}>
-                {ROLE_LABEL[session.role]}
-              </span>
-            )}
+            {/*
+              The role is a claim on the server, not a UI toggle — it comes from
+              /users/$uid, which only the createProfile function can write.
+            */}
+            <span
+              className={`rounded-full px-2.5 py-1 text-xs font-medium ${ROLE_ACCENT[session.role]}`}
+            >
+              {ROLE_LABEL[session.role]}
+            </span>
 
             <NavLink
               to="/settings"
@@ -132,7 +110,7 @@ export default function Layout() {
 
             <div className="hidden items-center gap-2 border-l border-ink-200 pl-3 sm:flex">
               <span className="max-w-[10rem] truncate text-sm text-ink-700">{session.name}</span>
-              <button onClick={signOut} className="btn-ghost px-2 py-1 text-xs">
+              <button onClick={() => void signOut()} className="btn-ghost px-2 py-1 text-xs">
                 Sign out
               </button>
             </div>

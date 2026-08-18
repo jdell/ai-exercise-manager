@@ -1,118 +1,64 @@
-import { useState } from 'react';
 import { useSession } from '../context/SessionContext';
-import { DEFAULT_MODEL, getApiKey, isUserSuppliedKey, setApiKey } from '../lib/claude';
-import { isFirebaseConfigured } from '../lib/firebase';
-import { storageMode } from '../lib/store';
+import { isFirebaseConfigured, usingEmulators } from '../lib/firebase';
 import { Alert, Panel } from '../components/ui';
-
-function maskKey(key: string): string {
-  if (key.length < 12) return '••••';
-  return `${key.slice(0, 11)}${'•'.repeat(12)}${key.slice(-4)}`;
-}
 
 export default function Settings() {
   const { session, signOut } = useSession();
-  const [draft, setDraft] = useState('');
-  const [saved, setSaved] = useState(false);
-  const current = getApiKey();
-  const fromLocal = isUserSuppliedKey();
-
-  function save() {
-    setApiKey(draft);
-    setDraft('');
-    setSaved(true);
-    setTimeout(() => setSaved(false), 2000);
-  }
 
   return (
     <div className="mx-auto max-w-2xl space-y-6">
       <div>
         <h1 className="text-2xl font-semibold text-ink-900">Settings</h1>
-        <p className="mt-1 text-sm text-ink-500">
-          Signed in as {session?.name} ({session?.role}).
-        </p>
+        <p className="mt-1 text-sm text-ink-500">Your account and how this app is wired up.</p>
       </div>
 
-      <Panel title="Anthropic API key" subtitle="Used for test runs and for scoring submissions.">
-        {current ? (
-          <Alert tone="success">
-            A key is configured{fromLocal ? ' in this browser' : ' from the build environment'}:{' '}
-            <code className="font-mono text-xs">{maskKey(current)}</code>
-          </Alert>
-        ) : (
-          <Alert tone="warning">
-            No key configured. Test runs and scoring will fail until you add one.
-          </Alert>
-        )}
-
-        <div className="mt-4">
-          <label htmlFor="apikey" className="label">
-            {current ? 'Replace the key' : 'Add a key'}
-          </label>
-          <input
-            id="apikey"
-            type="password"
-            className="input font-mono"
-            value={draft}
-            onChange={(e) => setDraft(e.target.value)}
-            placeholder="sk-ant-api03-…"
-            autoComplete="off"
-            spellCheck={false}
+      <Panel title="Account">
+        <dl className="divide-y divide-ink-100 text-sm">
+          <Row label="Name" value={session?.name ?? '—'} />
+          <Row label="Email" value={session?.email || '—'} />
+          <Row
+            label="Role"
+            value={
+              <span className="capitalize">
+                {session?.role ?? '—'}
+                <span className="ml-2 text-xs text-ink-400">set at sign-up</span>
+              </span>
+            }
           />
-          <p className="hint mt-1.5">
-            Stored in this browser's localStorage only — it is never written to the database. Get
-            one at{' '}
-            <a
-              href="https://console.anthropic.com/settings/keys"
-              target="_blank"
-              rel="noreferrer"
-              className="text-indigo-600 underline"
-            >
-              console.anthropic.com
-            </a>
-            .
-          </p>
-        </div>
+          <Row
+            label="User ID"
+            value={<code className="font-mono text-xs">{session?.id ?? '—'}</code>}
+          />
+        </dl>
+        <p className="hint mt-4">
+          Your role is stored on your profile record and can only be changed by someone with
+          database access — it is not something this page, or any page, can switch.
+        </p>
+      </Panel>
 
-        <div className="mt-4 flex items-center gap-3">
-          <button onClick={save} disabled={!draft.trim()} className="btn-primary">
-            Save key
-          </button>
-          {fromLocal && (
-            <button
-              onClick={() => {
-                setApiKey('');
-                setDraft('');
-              }}
-              className="btn-secondary"
-            >
-              Remove stored key
-            </button>
-          )}
-          {saved && <span className="text-sm text-emerald-600">Saved</span>}
-        </div>
-
-        <div className="mt-5 rounded-lg border border-amber-200 bg-amber-50 p-3.5">
-          <p className="text-xs leading-relaxed text-amber-900">
-            <span className="font-semibold">Where the key goes.</span> This app calls the Anthropic
-            API straight from the browser, so whatever key is in use is visible to anyone with
-            access to this device's developer tools. That is fine for a classroom where each person
-            supplies their own key, and not fine for a public deployment — for that, route requests
-            through a server you control and keep the key there.
-          </p>
-        </div>
+      <Panel title="Anthropic API key" subtitle="Held by the server, not by this browser.">
+        <Alert tone="success">
+          Nothing to configure here. Prompts and grading run in a Cloud Function that reads{' '}
+          <code className="font-mono text-xs">ANTHROPIC_API_KEY</code> from Firebase Secret Manager.
+        </Alert>
+        <p className="hint mt-4">
+          Earlier versions of this app called the Anthropic API straight from the browser, which
+          meant whatever key was in use could be read out of devtools. That path is gone: the
+          browser now calls <code className="font-mono text-xs">runPrompt</code> and{' '}
+          <code className="font-mono text-xs">evaluateSubmission</code>, and the key never leaves
+          the server.
+        </p>
       </Panel>
 
       <Panel title="Environment">
         <dl className="divide-y divide-ink-100 text-sm">
-          <Row label="Evaluator model" value={<code className="font-mono text-xs">{DEFAULT_MODEL}</code>} />
           <Row
             label="Data store"
             value={
-              storageMode === 'firebase' ? (
+              isFirebaseConfigured ? (
                 <span className="text-emerald-700">Firebase Realtime Database</span>
               ) : (
-                <span className="text-amber-700">This browser only (localStorage)</span>
+                <span className="text-rose-700">Not configured</span>
               )
             }
           />
@@ -120,22 +66,30 @@ export default function Settings() {
             label="Firebase config"
             value={isFirebaseConfigured ? 'Present' : 'Missing — set VITE_FIREBASE_* variables'}
           />
+          <Row
+            label="Backend"
+            value={
+              usingEmulators ? (
+                <span className="text-amber-700">Local emulator suite</span>
+              ) : (
+                'Deployed Firebase project'
+              )
+            }
+          />
         </dl>
-        {storageMode === 'local' && (
+        {usingEmulators && (
           <p className="hint mt-4">
-            Without Firebase, submissions live in this browser and sync across tabs but not across
-            devices. Everything else works, so the full flow is still demonstrable.
+            Auth, database, and functions are all served from{' '}
+            <code className="font-mono text-xs">firebase emulators:start</code> on this machine.
+            Nothing here touches your real project.
           </p>
         )}
       </Panel>
 
       <Panel title="Session">
-        <button onClick={signOut} className="btn-secondary">
+        <button onClick={() => void signOut()} className="btn-secondary">
           Sign out
         </button>
-        <p className="hint mt-2">
-          Students who sign back in with the same name keep their history.
-        </p>
       </Panel>
     </div>
   );
