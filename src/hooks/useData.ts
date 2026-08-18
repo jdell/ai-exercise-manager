@@ -1,36 +1,77 @@
 import { useEffect, useMemo, useState } from 'react';
 import { subscribeStudents, subscribeSubmissions } from '../lib/store';
+import { useSession } from '../context/SessionContext';
 import { EXERCISES } from '../data/exercises';
-import type { Exercise, ExerciseState, Student, Submission } from '../types';
+import type { Exercise, ExerciseState, Submission, UserProfile } from '../types';
 
-export function useSubmissions(): { submissions: Submission[]; loading: boolean } {
+/**
+ * Subscriptions and the locking rule.
+ *
+ * The subscriptions read the session themselves rather than taking a uid,
+ * because the shape of the read depends on the role: database rules let a
+ * student read `/submissions` only through a query filtered to their own uid.
+ * Getting that wrong is a permission error, not a wider result set.
+ */
+
+export function useSubmissions(): { submissions: Submission[]; loading: boolean; error: string } {
+  const { session } = useSession();
   const [submissions, setSubmissions] = useState<Submission[]>([]);
   const [loading, setLoading] = useState(true);
+  const [error, setError] = useState('');
 
   useEffect(() => {
-    const unsub = subscribeSubmissions((list) => {
-      setSubmissions([...list].sort((a, b) => b.createdAt - a.createdAt));
+    if (!session) {
+      setSubmissions([]);
       setLoading(false);
-    });
-    return unsub;
-  }, []);
+      return;
+    }
+    setLoading(true);
+    return subscribeSubmissions(
+      session.id,
+      session.role,
+      (list) => {
+        setSubmissions([...list].sort((a, b) => b.createdAt - a.createdAt));
+        setError('');
+        setLoading(false);
+      },
+      (err) => {
+        setError(err.message);
+        setLoading(false);
+      },
+    );
+  }, [session?.id, session?.role]); // eslint-disable-line react-hooks/exhaustive-deps
 
-  return { submissions, loading };
+  return { submissions, loading, error };
 }
 
-export function useStudents(): { students: Student[]; loading: boolean } {
-  const [students, setStudents] = useState<Student[]>([]);
+/** The class roster. Teacher-only — the rules deny `/users` to students. */
+export function useStudents(): { students: UserProfile[]; loading: boolean; error: string } {
+  const { session } = useSession();
+  const [students, setStudents] = useState<UserProfile[]>([]);
   const [loading, setLoading] = useState(true);
+  const [error, setError] = useState('');
 
   useEffect(() => {
-    const unsub = subscribeStudents((list) => {
-      setStudents([...list].sort((a, b) => a.name.localeCompare(b.name)));
+    if (session?.role !== 'teacher') {
+      setStudents([]);
       setLoading(false);
-    });
-    return unsub;
-  }, []);
+      return;
+    }
+    setLoading(true);
+    return subscribeStudents(
+      (list) => {
+        setStudents([...list].sort((a, b) => a.displayName.localeCompare(b.displayName)));
+        setError('');
+        setLoading(false);
+      },
+      (err) => {
+        setError(err.message);
+        setLoading(false);
+      },
+    );
+  }, [session?.role]);
 
-  return { students, loading };
+  return { students, loading, error };
 }
 
 /**

@@ -3,8 +3,8 @@ import { Link, Navigate, useParams } from 'react-router-dom';
 import { useSession } from '../context/SessionContext';
 import { useStudentProgress, useSubmissions } from '../hooks/useData';
 import { EXERCISE_BY_ID, EXERCISES } from '../data/exercises';
-import { describeError, evaluateSubmission, hasApiKey, runStudentPrompt } from '../lib/claude';
-import { newId, patchSubmission, saveSubmission } from '../lib/store';
+import { describeError, evaluateSubmission, runStudentPrompt } from '../lib/claude';
+import { createSubmission, newId } from '../lib/store';
 import {
   Alert,
   EmptyState,
@@ -38,7 +38,7 @@ export default function ExerciseWorkspace() {
   const [prompt, setPrompt] = useState('');
   const [reflection, setReflection] = useState('');
   const [output, setOutput] = useState('');
-  /** The prompt text that produced `output`, so we can skip a redundant run. */
+  /** True once a test run has produced output for the prompt currently shown. */
   const [outputFor, setOutputFor] = useState<string | null>(null);
   const [running, setRunning] = useState(false);
   const [submitting, setSubmitting] = useState(false);
@@ -83,8 +83,8 @@ export default function ExerciseWorkspace() {
     const promptSnapshot = prompt;
     try {
       const result = await runStudentPrompt(
+        exercise.id,
         promptSnapshot,
-        exercise.testInput,
         (chunk) => setOutput((prev) => prev + chunk),
         controller.signal,
       );
@@ -98,12 +98,20 @@ export default function ExerciseWorkspace() {
     }
   }
 
+  /**
+   * Submitting writes the attempt, then hands its id to the evaluator.
+   *
+   * The browser deliberately does not send the output it saw during a test run.
+   * The function re-runs the recorded prompt itself and writes both the
+   * transcript and the score with admin credentials, so what gets graded is
+   * what was actually submitted — a student cannot paste in a better answer
+   * than their prompt produced.
+   */
   async function handleSubmit() {
     if (!exercise || !session) return;
     setError('');
     setSubmitting(true);
 
-    const promptSnapshot = prompt;
     const attemptNumber = (entry?.attempts.length ?? 0) + 1;
     const now = Date.now();
     const submission: Submission = {
@@ -113,7 +121,7 @@ export default function ExerciseWorkspace() {
       exerciseId: exercise.id,
       exerciseOrder: exercise.order,
       attempt: attemptNumber,
-      prompt: promptSnapshot,
+      prompt,
       reflection: reflection.trim(),
       output: '',
       status: 'evaluating',
@@ -122,41 +130,19 @@ export default function ExerciseWorkspace() {
     };
 
     try {
-      await saveSubmission(submission);
+      await createSubmission(submission);
 
-      // Reuse the test-run output when it came from this exact prompt.
-      let finalOutput = outputFor === promptSnapshot ? output : '';
-      if (!finalOutput) {
-        setStage('Running your prompt…');
-        setOutput('');
-        const result = await runStudentPrompt(
-          promptSnapshot,
-          exercise.testInput,
-          (chunk) => setOutput((prev) => prev + chunk),
-        );
-        finalOutput = result.output;
-        setOutputFor(promptSnapshot);
-      }
-      await patchSubmission(submission.id, { output: finalOutput });
-
-      setStage('Claude is scoring your work…');
-      const priorAttempts = (entry?.attempts ?? []).filter((a) => a.evaluation);
-      const evaluation = await evaluateSubmission(
-        exercise,
-        { ...submission, output: finalOutput },
-        priorAttempts,
-      );
-
-      await patchSubmission(submission.id, {
-        output: finalOutput,
-        evaluation,
-        status: 'awaiting_review',
-      });
+      setStage('Running your prompt and scoring it…');
+      setOutput('');
+      setOutputFor(null);
+      const result = await evaluateSubmission(submission.id);
+      setOutput(result.output);
       setStage('');
     } catch (err) {
-      const message = describeError(err);
-      setError(message);
-      await patchSubmission(submission.id, { status: 'error', error: message });
+      // The function records the failure on the submission itself, so the
+      // attempt shows as errored in both dashboards without a second write
+      // from here.
+      setError(describeError(err));
       setStage('');
     } finally {
       setSubmitting(false);
@@ -180,16 +166,6 @@ export default function ExerciseWorkspace() {
         </div>
         <p className="mt-1 text-sm text-ink-500">{exercise.tagline}</p>
       </div>
-
-      {!hasApiKey() && (
-        <Alert tone="warning">
-          No Anthropic API key is configured, so test runs and scoring will fail.{' '}
-          <Link to="/settings" className="font-medium underline">
-            Add one in Settings
-          </Link>
-          .
-        </Alert>
-      )}
 
       {state === 'approved' && (
         <Alert tone="success">
@@ -365,7 +341,7 @@ export default function ExerciseWorkspace() {
                 {stage && <span className="text-sm text-ink-500">{stage}</span>}
                 {!submitting && (
                   <span className="hint">
-                    Submitting runs your prompt once more, then sends it for scoring.
+                    Submitting re-runs your prompt on the server, then scores what it produced.
                   </span>
                 )}
               </div>

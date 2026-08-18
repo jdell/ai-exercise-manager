@@ -5,7 +5,7 @@ import { useSubmissions } from '../hooks/useData';
 import { EXERCISE_BY_ID } from '../data/exercises';
 import { PASSING_SCORE, RUBRIC, weightedTotal } from '../data/rubric';
 import { describeError, evaluateSubmission } from '../lib/claude';
-import { patchSubmission } from '../lib/store';
+import { saveReview } from '../lib/store';
 import {
   Alert,
   Panel,
@@ -76,7 +76,7 @@ export default function TeacherReview() {
     setError('');
     setBusy(decision === 'approved' ? 'approve' : 'revision');
     try {
-      await patchSubmission(submission.id, {
+      await saveReview(submission.id, {
         status: decision === 'approved' ? 'approved' : 'needs_revision',
         review: {
           overrides,
@@ -95,13 +95,15 @@ export default function TeacherReview() {
     }
   }
 
+  // Re-grading is server-side: the function reads the recorded prompt and
+  // output and writes the new evaluation itself, so there is nothing to save
+  // from here. The subscription picks up the change.
   async function reEvaluate() {
-    if (!submission || !exercise) return;
+    if (!submission) return;
     setError('');
     setBusy('reeval');
     try {
-      const evaluation = await evaluateSubmission(exercise, submission, priorAttempts);
-      await patchSubmission(submission.id, { evaluation });
+      await evaluateSubmission(submission.id);
       setOverrides({});
     } catch (err) {
       setError(describeError(err));

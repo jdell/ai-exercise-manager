@@ -1,16 +1,9 @@
 import { useMemo, useState } from 'react';
-import { Link } from 'react-router-dom';
 import { useSubmissions } from '../hooks/useData';
 import { EXERCISES, EXERCISE_BY_ID } from '../data/exercises';
 import { PASSING_SCORE, RUBRIC } from '../data/rubric';
-import {
-  DEFAULT_MODEL,
-  buildEvaluatorSystemPrompt,
-  describeError,
-  evaluateSubmission,
-  hasApiKey,
-} from '../lib/claude';
-import { patchSubmission } from '../lib/store';
+import { describeError, evaluateSubmission } from '../lib/claude';
+import { buildEvaluatorSystemPrompt } from '../lib/evaluator-prompt';
 import { Alert, EmptyState, Panel, Spinner, relativeTime, scoreTone } from '../components/ui';
 import type { RubricKey } from '../types';
 
@@ -50,23 +43,13 @@ export default function EvaluatorConsole() {
     return { perDimension, overridden: overridden.length, drift, agreed, total: evaluated.length };
   }, [evaluated]);
 
+  // The function re-reads the submission, re-grades it, and writes the result
+  // itself — the console only needs the id.
   async function reEvaluate(submissionId: string) {
-    const submission = submissions.find((s) => s.id === submissionId);
-    if (!submission) return;
-    const ex = EXERCISE_BY_ID[submission.exerciseId];
-    if (!ex) return;
     setError('');
     setBusyId(submissionId);
     try {
-      const priorAttempts = submissions.filter(
-        (s) =>
-          s.studentId === submission.studentId &&
-          s.exerciseId === submission.exerciseId &&
-          s.attempt < submission.attempt &&
-          s.evaluation,
-      );
-      const evaluation = await evaluateSubmission(ex, submission, priorAttempts);
-      await patchSubmission(submissionId, { evaluation });
+      await evaluateSubmission(submissionId);
     } catch (err) {
       setError(describeError(err));
     } finally {
@@ -84,19 +67,15 @@ export default function EvaluatorConsole() {
         </p>
       </div>
 
-      {!hasApiKey() && (
-        <Alert tone="warning">
-          No API key configured — re-evaluation is unavailable.{' '}
-          <Link to="/settings" className="font-medium underline">
-            Add one in Settings
-          </Link>
-          .
-        </Alert>
-      )}
       {error && <Alert>{error}</Alert>}
 
       <div className="grid gap-4 sm:grid-cols-4">
-        <Stat label="Model" value={DEFAULT_MODEL} mono />
+        {/*
+          The model is chosen server-side, so the console reports what the last
+          grade actually ran on rather than a build-time constant that could
+          disagree with it.
+        */}
+        <Stat label="Model" value={evaluated[0]?.evaluation?.model ?? '—'} mono />
         <Stat label="Evaluations run" value={String(evaluated.length)} />
         <Stat label="Teacher agreed" value={stats ? String(stats.agreed) : '—'} />
         <Stat
@@ -195,7 +174,7 @@ export default function EvaluatorConsole() {
                     </span>
                     <button
                       onClick={() => reEvaluate(s.id)}
-                      disabled={busyId !== null || !hasApiKey()}
+                      disabled={busyId !== null}
                       className="btn-secondary shrink-0 px-2.5 py-1 text-xs"
                     >
                       {busyId === s.id ? <Spinner className="h-3 w-3" /> : 'Re-run'}

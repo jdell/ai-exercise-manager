@@ -1,13 +1,31 @@
 /** Shared domain types for the AI Skills Exercise Manager. */
 
-export type Role = 'student' | 'teacher' | 'evaluator';
+export type Role = 'student' | 'teacher';
 
-/** The signed-in identity, persisted to localStorage. */
+/**
+ * A user's profile record at /users/$uid.
+ *
+ * `role` is written only by the createProfile Cloud Function; database rules
+ * reject any client write to that field. Everything that grants teacher access
+ * — routes, rules, the evaluator console — reads it from here.
+ */
+export interface UserProfile {
+  /** Firebase Auth uid. Also the key under /users and the submission's studentId. */
+  uid: string;
+  email: string;
+  displayName: string;
+  role: Role;
+  createdAt: number;
+  lastSeenAt: number;
+}
+
+/** The signed-in identity, derived from Firebase Auth plus the profile. */
 export interface Session {
   role: Role;
-  /** Stable id. For students this is also their key under /students. */
+  /** The Firebase Auth uid. */
   id: string;
   name: string;
+  email: string;
 }
 
 /** One of the four rubric dimensions. */
@@ -88,6 +106,7 @@ export type SubmissionStatus =
 
 export interface Submission {
   id: string;
+  /** The author's Firebase Auth uid. */
   studentId: string;
   studentName: string;
   exerciseId: string;
@@ -108,13 +127,6 @@ export interface Submission {
 }
 
 export type ExerciseState = 'locked' | 'available' | 'in_review' | 'revision' | 'approved';
-
-export interface Student {
-  id: string;
-  name: string;
-  createdAt: number;
-  lastSeenAt: number;
-}
 
 /** Denormalised per-student, per-exercise state for fast dashboards. */
 export interface ProgressEntry {

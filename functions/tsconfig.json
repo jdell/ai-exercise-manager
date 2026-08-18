@@ -1,0 +1,31 @@
+{
+  "compilerOptions": {
+    "module": "commonjs",
+    "moduleResolution": "node",
+    "target": "ES2022",
+    "lib": ["ES2022"],
+    "outDir": "lib",
+    /*
+     * The evaluator's prompt builder, the rubric, the exercises, and the domain
+     * types are shared with the browser app rather than copied here — a second
+     * copy of the rubric would drift from src/data/rubric.ts within a release.
+     * Compiling them means rootDir has to be the repo root, which is why the
+     * emitted entry point is lib/functions/src/index.js and not lib/index.js.
+     */
+    "rootDir": "..",
+    "sourceMap": true,
+    "strict": true,
+    "noUnusedLocals": true,
+    "noUnusedParameters": true,
+    "noFallthroughCasesInSwitch": true,
+    "esModuleInterop": true,
+    "forceConsistentCasingInFileNames": true,
+    "skipLibCheck": true
+  },
+  "include": [
+    "src/**/*.ts",
+    "../src/types/**/*.ts",
+    "../src/data/**/*.ts",
+    "../src/lib/evaluator-prompt.ts"
+  ]
+}

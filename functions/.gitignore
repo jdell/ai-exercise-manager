@@ -1,0 +1,8 @@
+node_modules
+lib
+*.tsbuildinfo
+
+# Emulator secret values (ANTHROPIC_API_KEY, TEACHER_SIGNUP_CODE).
+.secret.local
+.env
+.env.local
