@@ -1,0 +1,22 @@
+{
+  "rules": {
+    ".read": true,
+    ".write": true,
+
+    "students": {
+      "$studentId": {
+        ".validate": "newData.hasChildren(['id', 'name', 'createdAt'])",
+        "name": { ".validate": "newData.isString() && newData.val().length <= 80" }
+      }
+    },
+
+    "submissions": {
+      ".indexOn": ["studentId", "exerciseId", "status", "createdAt"],
+      "$submissionId": {
+        ".validate": "newData.hasChildren(['id', 'studentId', 'exerciseId', 'prompt', 'status'])",
+        "prompt": { ".validate": "newData.isString() && newData.val().length <= 20000" },
+        "reflection": { ".validate": "newData.isString() && newData.val().length <= 20000" }
+      }
+    }
+  }
+}
