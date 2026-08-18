@@ -1,9 +1,8 @@
 import { useMemo, useState } from 'react';
 import { Link, Navigate, useNavigate, useParams } from 'react-router-dom';
 import { useSession } from '../context/SessionContext';
-import { useSubmissions } from '../hooks/useData';
-import { EXERCISE_BY_ID } from '../data/exercises';
-import { PASSING_SCORE, RUBRIC, weightedTotal } from '../data/rubric';
+import { useExercises, useSubmissions } from '../hooks/useData';
+import { PASSING_SCORE, RUBRIC, effectiveWeights, weightedTotal } from '../data/rubric';
 import { describeError, evaluateSubmission } from '../lib/claude';
 import { saveReview } from '../lib/store';
 import {
@@ -23,6 +22,7 @@ export default function TeacherReview() {
   const { session } = useSession();
   const navigate = useNavigate();
   const { submissions, loading } = useSubmissions();
+  const { byId, loading: exercisesLoading } = useExercises();
 
   const submission = submissions.find((s) => s.id === submissionId);
   const [overrides, setOverrides] = useState<Partial<Record<RubricKey, number>>>({});
@@ -52,10 +52,13 @@ export default function TeacherReview() {
     [submissions, submission],
   );
 
-  if (loading) return <div className="h-96 animate-pulse rounded-xl bg-ink-100" />;
+  if (loading || exercisesLoading) return <div className="h-96 animate-pulse rounded-xl bg-ink-100" />;
   if (!submission) return <Navigate to="/teacher" replace />;
 
-  const exercise = EXERCISE_BY_ID[submission.exerciseId];
+  const exercise = byId[submission.exerciseId];
+  // Score with the weights this attempt was graded under, so a later edit to
+  // the exercise cannot silently restate an old submission's total.
+  const weights = submission.evaluation?.weights ?? effectiveWeights(exercise?.rubricWeights);
   const claudeScores = submission.evaluation?.scores;
   const effective = RUBRIC.reduce<Record<RubricKey, number>>(
     (acc, dim) => {
@@ -64,7 +67,7 @@ export default function TeacherReview() {
     },
     {} as Record<RubricKey, number>,
   );
-  const finalScore = weightedTotal(effective);
+  const finalScore = weightedTotal(effective, weights);
   const changed = Object.keys(overrides).length > 0;
 
   async function decide(decision: 'approved' | 'revision') {
@@ -141,7 +144,9 @@ export default function TeacherReview() {
         {/* Left: the work */}
         <div className="min-w-0 space-y-6">
           <Panel title="What the student was asked to do">
-            <p className="text-sm leading-relaxed text-ink-700">{exercise?.task}</p>
+            <p className="text-sm leading-relaxed text-ink-700">
+              {exercise?.task ?? 'This exercise has been deleted.'}
+            </p>
             <ul className="mt-3 space-y-1.5 border-t border-ink-200 pt-3">
               {exercise?.successCriteria.map((c) => (
                 <li key={c} className="flex gap-2 text-sm text-ink-600">
@@ -259,7 +264,7 @@ export default function TeacherReview() {
                       <label htmlFor={`score-${dim.key}`} className="text-sm font-medium text-ink-700">
                         {dim.label}
                         <span className="ml-1.5 text-xs font-normal text-ink-400">
-                          {Math.round(dim.weight * 100)}%
+                          {Math.round((weights[dim.key] ?? dim.weight) * 100)}%
                         </span>
                       </label>
                       <span className={`text-sm font-semibold tabular-nums ${scoreTone(value)}`}>

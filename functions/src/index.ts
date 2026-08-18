@@ -4,14 +4,21 @@ import { HttpsError, onCall, type CallableResponse } from 'firebase-functions/v2
 import { defineSecret } from 'firebase-functions/params';
 import * as logger from 'firebase-functions/logger';
 
-import { EXERCISE_BY_ID } from '../../src/data/exercises';
 import type { Submission, UserProfile } from '../../src/types';
 import {
   describeClaudeError,
   evaluateSubmission as gradeSubmission,
   runStudentPrompt,
 } from './claude';
-import { db, priorAttempts, profileOf, requireString, requireUid, roleOf } from './guards';
+import {
+  db,
+  exerciseOf,
+  priorAttempts,
+  profileOf,
+  requireString,
+  requireUid,
+  roleOf,
+} from './guards';
 
 /**
  * The server side of the app.
@@ -135,8 +142,7 @@ export const runPrompt = onCall(
 
     const prompt = requireString(request.data?.prompt, 'A prompt', MAX_PROMPT_CHARS);
     const exerciseId = requireString(request.data?.exerciseId, 'An exercise', 120);
-    const exercise = EXERCISE_BY_ID[exerciseId];
-    if (!exercise) throw new HttpsError('not-found', 'That exercise does not exist.');
+    const exercise = await exerciseOf(exerciseId);
 
     // sendChunk is async; chain the sends so deltas arrive in order and the
     // handler can wait for the last one before returning.
@@ -171,7 +177,7 @@ export const runPrompt = onCall(
  */
 export const evaluateSubmission = onCall(
   { secrets: [ANTHROPIC_API_KEY], timeoutSeconds: 540, memory: '512MiB' },
-  async (request) => {
+  async (request, response?: CallableResponse<{ text: string }>) => {
     const uid = requireUid(request);
     const submissionId = requireString(request.data?.submissionId, 'A submission', 120);
 
@@ -191,8 +197,14 @@ export const evaluateSubmission = onCall(
       throw new HttpsError('failed-precondition', 'This attempt has already been scored.');
     }
 
-    const exercise = EXERCISE_BY_ID[submission.exerciseId];
-    if (!exercise) throw new HttpsError('not-found', 'That exercise does not exist.');
+    const exercise = await exerciseOf(submission.exerciseId);
+
+    // sendChunk is async; chain the sends so deltas arrive in order and the
+    // handler can wait for the last one before returning.
+    let sending: Promise<unknown> = Promise.resolve();
+    const onDelta = (text: string) => {
+      sending = sending.then(() => response?.sendChunk({ text }));
+    };
 
     try {
       let output = submission.output ?? '';
@@ -207,7 +219,9 @@ export const evaluateSubmission = onCall(
         exercise,
         { ...submission, output },
         await priorAttempts(submission),
+        onDelta,
       );
+      await sending;
 
       await ref.update({
         output,

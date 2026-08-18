@@ -1,7 +1,6 @@
 import { useMemo, useState } from 'react';
 import { Link } from 'react-router-dom';
-import { useStudents, useSubmissions } from '../hooks/useData';
-import { EXERCISES, EXERCISE_BY_ID } from '../data/exercises';
+import { useExercises, useStudents, useSubmissions } from '../hooks/useData';
 import { PASSING_SCORE } from '../data/rubric';
 import {
   EmptyState,
@@ -26,6 +25,7 @@ const FILTERS: { value: Filter; label: string }[] = [
 export default function TeacherDashboard() {
   const { submissions, loading } = useSubmissions();
   const { students } = useStudents();
+  const { exercises, byId } = useExercises();
   const [filter, setFilter] = useState<Filter>('queue');
   const [query, setQuery] = useState('');
 
@@ -55,14 +55,14 @@ export default function TeacherDashboard() {
         filter === 'all' ? true : filter === 'queue' ? s.status === 'awaiting_review' : s.status === filter;
       if (!matchesFilter) return false;
       if (!q) return true;
-      const exercise = EXERCISE_BY_ID[s.exerciseId]?.title ?? '';
+      const exercise = byId[s.exerciseId]?.title ?? '';
       return (
         s.studentName.toLowerCase().includes(q) ||
         exercise.toLowerCase().includes(q) ||
         s.prompt.toLowerCase().includes(q)
       );
     });
-  }, [submissions, filter, query]);
+  }, [submissions, filter, query, byId]);
 
   return (
     <div className="space-y-6">
@@ -120,13 +120,20 @@ export default function TeacherDashboard() {
 
       <div className="space-y-3">
         {filtered.map((s) => (
-          <SubmissionRow key={s.id} submission={s} />
+          <SubmissionRow
+            key={s.id}
+            submission={s}
+            exerciseTitle={byId[s.exerciseId]?.title ?? s.exerciseId}
+          />
         ))}
       </div>
 
-      <Panel title="Coverage by exercise" subtitle="How the class is distributed across the track.">
+      <Panel
+        title="Coverage by exercise"
+        subtitle="How the class is distributed across the track, custom exercises included."
+      >
         <div className="space-y-3">
-          {EXERCISES.map((ex) => {
+          {exercises.map((ex) => {
             const forEx = submissions.filter((s) => s.exerciseId === ex.id);
             const approved = new Set(
               forEx.filter((s) => s.status === 'approved').map((s) => s.studentId),
@@ -166,8 +173,13 @@ function Stat({ label, value, accent }: { label: string; value: number | string;
   );
 }
 
-function SubmissionRow({ submission }: { submission: Submission }) {
-  const exercise = EXERCISE_BY_ID[submission.exerciseId];
+function SubmissionRow({
+  submission,
+  exerciseTitle,
+}: {
+  submission: Submission;
+  exerciseTitle: string;
+}) {
   const score = submission.review?.finalScore ?? submission.evaluation?.weightedTotal;
 
   return (
@@ -187,7 +199,7 @@ function SubmissionRow({ submission }: { submission: Submission }) {
         <div className="flex flex-wrap items-center gap-2">
           <span className="font-medium text-ink-900">{submission.studentName}</span>
           <span className="text-sm text-ink-400">·</span>
-          <span className="text-sm text-ink-600">{exercise?.title ?? submission.exerciseId}</span>
+          <span className="text-sm text-ink-600">{exerciseTitle}</span>
           <span className="text-xs text-ink-400">attempt {submission.attempt}</span>
           <StatusBadge status={submission.status} />
         </div>

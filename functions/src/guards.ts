@@ -1,6 +1,7 @@
 import { getDatabase } from 'firebase-admin/database';
 import { HttpsError, type CallableRequest } from 'firebase-functions/v2/https';
-import type { Role, Submission, UserProfile } from '../../src/types';
+import { EXERCISE_BY_ID } from '../../src/data/exercises';
+import type { Exercise, Role, Submission, UserProfile } from '../../src/types';
 
 /** Small shared checks. Every callable starts by running these. */
 
@@ -22,6 +23,24 @@ export function requireString(value: unknown, field: string, maxLength: number):
     throw new HttpsError('invalid-argument', `${field} is longer than ${maxLength} characters.`);
   }
   return trimmed;
+}
+
+/**
+ * The exercise being run or graded: the built-in five first, then the
+ * teacher-authored ones under `/exercises`.
+ *
+ * Reading the custom ones here rather than accepting them from the caller is
+ * the same rule as everything else in this file — the client sends an id, the
+ * server decides what that id means. A student cannot invent an exercise with a
+ * friendlier rubric by putting one in the request body.
+ */
+export async function exerciseOf(exerciseId: string): Promise<Exercise> {
+  const builtin = EXERCISE_BY_ID[exerciseId];
+  if (builtin) return builtin;
+
+  const snap = await db().ref(`exercises/${exerciseId}`).get();
+  if (!snap.exists()) throw new HttpsError('not-found', 'That exercise does not exist.');
+  return snap.val() as Exercise;
 }
 
 export async function profileOf(uid: string): Promise<UserProfile | null> {

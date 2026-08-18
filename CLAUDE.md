@@ -4,16 +4,19 @@ Guidance for Claude Code when working in this repository.
 
 ## What this is
 
-A classroom app for teaching prompt engineering. Students work through five
-locked exercises; Claude auto-scores each submission against a fixed rubric;
-a teacher reviews every score and decides whether the student progresses.
+A classroom app for teaching prompt engineering. Students work through a locked
+sequence of exercises — five built in, plus any a teacher authors; Claude
+auto-scores each submission against a fixed rubric, streaming the result as it
+is written; a teacher reviews every score and decides whether the student
+progresses. Every attempt is kept, so students can see how their work moved
+between revisions.
 
 Two roles, backed by Firebase Authentication:
 
 | Role | Does |
 |---|---|
 | **Student** | Writes prompts, test-runs them, submits with a reflection |
-| **Teacher** | Reviews Claude's scores, overrides any dimension, approves or requests a revision. Also gets the Evaluator Console, which exposes the exact system prompt, a log of every score, and how far teachers have moved those scores |
+| **Teacher** | Reviews Claude's scores, overrides any dimension, approves or requests a revision, and authors custom exercises. Also gets the Evaluator Console, which exposes the exact system prompt, a log of every score, and how far teachers have moved those scores |
 
 The role lives on the user's profile record at `/users/$uid` and is written by
 one Cloud Function. It is not a UI toggle, and there is no third "evaluator"
@@ -50,16 +53,19 @@ installs `functions/` so that typecheck works from a fresh clone.
 ```
 src/
 ├── data/
-│   ├── exercises.ts    ← the five exercises: brief, task, criteria, test input,
-│   │                     and per-exercise grading guidance for the evaluator
-│   └── rubric.ts       ← the four dimensions, weights, and weightedTotal()
+│   ├── exercises.ts    ← the five BUILT-IN exercises + mergeExercises()
+│   ├── paths.ts        ← the three learning paths and difficulty styling
+│   └── rubric.ts       ← the four dimensions, weights, effectiveWeights(),
+│                         and weightedTotal()
 ├── lib/
 │   ├── evaluator-prompt.ts ← the grading prompt + schema. SHARED with functions/
 │   ├── claude.ts       ← thin client for the two callables. No SDK, no key
+│   ├── partial-json.ts ← reads a half-written JSON document (streaming preview)
 │   ├── auth.ts         ← Firebase Auth + the createProfile call
 │   ├── firebase.ts     ← app/auth/db/functions handles + emulator wiring
 │   └── store.ts        ← database reads and writes, scoped by role
-├── hooks/useData.ts    ← subscriptions + computeProgress() (the locking rule)
+├── hooks/useData.ts    ← subscriptions, useExercises(), computeProgress()
+│                         (the locking rule), pathProgress()
 ├── context/SessionContext.tsx  ← credential + profile = session
 ├── components/         ← Layout, AuthShell, shared UI primitives
 ├── pages/              ← one file per route
@@ -77,8 +83,19 @@ database.rules.json     ← the actual access control
 
 ### 1. The rubric is defined once, in `src/data/rubric.ts`
 
-Weights are Prompt Quality 40%, Understanding 30%, Execution 20%, Growth 10%.
-`weightedTotal()` is the only place the final score is computed.
+Default weights are Prompt Quality 40%, Understanding 30%, Execution 20%,
+Growth 10%. `weightedTotal()` is the only place the final score is computed.
+
+An exercise may override those weights (`Exercise.rubricWeights`). Resolve them
+through `effectiveWeights()`, which merges the overrides over the defaults and
+normalises the set to sum to 1 — a teacher who types 50/30/40/5 in the builder
+gets that ratio rather than an error. Never read `dim.weight` directly when an
+exercise is in scope.
+
+Each `Evaluation` records the `weights` it was scored with. Read that first and
+fall back to the exercise's current weights, so an attempt graded before a
+teacher reweighted the exercise still explains its own total instead of
+silently disagreeing with a live recomputation.
 
 **The model never supplies the total.** It returns four 0–100 dimension scores;
 the app clamps them and computes the weighted total itself. If you add a
@@ -90,6 +107,16 @@ dimension, update `RUBRIC`, the `RubricKey` type, and `EVALUATION_SCHEMA` in
 `evaluateSubmission()` uses `output_config.format` with a `json_schema`. Do not
 replace this with "return JSON" in the prompt and a regex — the schema is what
 makes scores parse reliably.
+
+It is also **streamed** (`messages.stream`), so the student watches the
+evaluation arrive instead of a spinner. The deltas are fragments of one JSON
+document, so the live preview goes through `parsePartialEvaluation()` in
+`lib/partial-json.ts` — a deliberately lenient reader that never throws and
+only reports values it has seen terminated (no half-typed score flashing 8
+before 85, no partial list item). It is a preview only: the returned
+`Evaluation` always comes from `JSON.parse` of the finished document. If you
+add a field to `EVALUATION_SCHEMA` that the UI should preview, teach the reader
+about it too.
 
 Structured outputs do **not** support numeric range constraints (`minimum`,
 `maximum`), which is why scores are declared as plain integers and clamped in
@@ -112,7 +139,8 @@ student test runs at `'medium'`.
 Opus 5's safety classifiers can decline a request — that arrives as **HTTP 200**
 with `stop_reason: 'refusal'`, not an exception. Both API call sites — in
 `functions/src/claude.ts` — check for it and throw `RefusalError`. Any new call
-site must do the same before touching `message.content`.
+site must do the same before touching `message.content` — including the streamed
+ones, where the check goes on the resolved `finalMessage()`, not on the deltas.
 
 Refusals are surfaced to the student verbatim rather than silently retried on a
 fallback model — for a course about prompting, "Claude declined this prompt" is
@@ -133,6 +161,33 @@ Exercise N is available only once exercise N−1 has a submission with status
 redirects on `state === 'locked'` and the dashboard renders from the same map.
 Do not duplicate the rule elsewhere.
 
+The chain runs over the **whole ordered list**, custom exercises included.
+Learning paths group that list for display and per-path completion; they do not
+fork it into parallel chains. One chain is what keeps `computeProgress()` the
+only place locking is decided — think hard before changing that, because
+per-path unlocking changes the pedagogy, not just the code.
+
+### 6a. The exercise list is dynamic — read `useExercises()`
+
+`EXERCISES` in `data/exercises.ts` holds only the five built-ins. Teachers
+author custom exercises that live under `/exercises` in the database, and
+`useExercises()` merges the two into one ordered list with a lookup map.
+Anything that renders, links to, or grades an exercise must read that hook;
+reaching for the `EXERCISES` constant makes custom exercises silently vanish.
+
+Because the list is fetched, a deep link cannot be judged until it has loaded —
+wait for `loading` before redirecting on a missing or locked exercise, or you
+will bounce a valid link to a custom exercise.
+
+### 6b. Every attempt is kept
+
+A submission is never overwritten: each attempt is its own record with its own
+`attempt` number, prompt, output, evaluation, and review. `attemptsFor()`
+returns them oldest-first, and `RevisionTimeline` renders the score
+progression. Do not "tidy" this into a latest-attempt-plus-history shape — the
+Growth dimension, the revision timeline, and the teacher's context all read the
+full series.
+
 ### 7. Progress is derived, never stored
 
 There is no `/progress` node. Everything is computed from `/submissions` so the
@@ -145,6 +200,11 @@ measured problem.
 the prompt from the database, runs it, writes the output, grades it, and writes
 the score — all with admin credentials. The browser's test-run output is a
 preview for the student, never the graded artifact.
+
+The grade still streams back while that happens: the callable sends the
+evaluator's raw JSON deltas as chunks, and the client previews them through
+`partial-json.ts`. The preview is cosmetic — the Evaluation the teacher reviews
+is the one the function computed and wrote.
 
 This is what lets `database.rules.json` deny clients any write to `evaluation`
 or `output`. If you ever pass the output up from the client to save a round
@@ -180,7 +240,11 @@ rather than fetching everything and filtering. Getting that wrong is a
 permission error, not a wider result set — do not "simplify" it back.
 
 Realtime Database rejects `undefined` values — `stripUndefined()` exists for that
-reason. Use it on any new write path.
+reason, and it recurses into nested objects because exercise records carry them
+(rubric weight overrides). Use it on any new write path.
+
+Database nodes: `/students`, `/submissions`, `/exercises` (custom exercises
+only — the built-in five are compiled in and must never be written there).
 
 ## Security posture
 
@@ -223,6 +287,12 @@ adding a variant.
 - Domain types go in `src/types/index.ts`; import them with `import type`.
 - Prefer deriving state in `useData.ts` over adding fields to stored records.
 - UI primitives live in `components/ui.tsx`. Reuse `Panel`, `Alert`, `ScoreRing`,
-  `RubricBreakdown`, `StatusBadge` rather than hand-rolling equivalents.
+  `RubricBreakdown`, `StatusBadge`, `RevisionTimeline`, `LiveEvaluation`,
+  `PathChip`, `DifficultyBadge`, `CharCounter` rather than hand-rolling
+  equivalents.
+- `Exercise.maxPromptChars` is an advisory budget, surfaced by `CharCounter`.
+  Going over does not block submission and the evaluator is never told about it
+  — the point is to make the constraint felt while writing, not to fail a
+  student on a character they cannot see.
 - Comments explain *why*, not *what*. The existing comments mark constraints
   (API behaviours, Tailwind limitations, trust boundaries) — match that bar.

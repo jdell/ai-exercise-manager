@@ -42,9 +42,25 @@ export interface RubricDimension {
   criteria: string;
 }
 
+/** Learning paths group the exercise board into tracks. */
+export type PathId = 'fundamentals' | 'advanced' | 'domain';
+
+export interface LearningPath {
+  id: PathId;
+  title: string;
+  blurb: string;
+  /** Tailwind classes for the path chip. */
+  accent: string;
+}
+
+export type Difficulty = 'intro' | 'core' | 'advanced';
+
 export interface Exercise {
   id: string;
-  /** 1-based position in the locked progression. */
+  /**
+   * 1-based position in the locked progression. The chain runs across every
+   * exercise in `order` — paths group the board, they do not fork the lock.
+   */
   order: number;
   title: string;
   tagline: string;
@@ -56,7 +72,11 @@ export interface Exercise {
   task: string;
   /** Bullet hints shown in the workspace. */
   tips: string[];
-  /** What "good" looks like — also fed to the evaluator. */
+  /**
+   * The requirements list: what "good" looks like, checked one by one by the
+   * evaluator. The exercise builder writes its requirements here — there is no
+   * second parallel list.
+   */
   successCriteria: string[];
   /** Pre-filled scaffold in the prompt editor. */
   starterPrompt: string;
@@ -68,6 +88,32 @@ export interface Exercise {
   testInput?: string;
   /** Extra instruction handed to the evaluator for this specific exercise. */
   evaluatorNotes: string;
+  /** Which learning path this exercise belongs to. */
+  pathId: PathId;
+  difficulty: Difficulty;
+  /** Short subject label, e.g. "Specificity" or "Schema design". */
+  topic: string;
+  /**
+   * Advisory length budget for the prompt, driving the editor's character
+   * counter. Not enforced, and the evaluator is not told about it.
+   */
+  maxPromptChars?: number;
+  /** A prompt that satisfies the exercise. Shown to the student and the evaluator. */
+  goodExample?: string;
+  /** A prompt that misses, and why that is instructive. */
+  badExample?: string;
+  /**
+   * Per-exercise rubric weights as fractions, overriding RUBRIC's defaults.
+   * A partial override leaves the untouched dimensions at their defaults; the
+   * whole set is normalised to sum to 1 by effectiveWeights().
+   */
+  rubricWeights?: Partial<Record<RubricKey, number>>;
+  /** Built-in exercises ship in code; custom ones are authored by teachers. */
+  source: 'builtin' | 'custom';
+  createdAt?: number;
+  updatedAt?: number;
+  /** Teacher name, for custom exercises. */
+  createdBy?: string;
 }
 
 /** Claude Evaluator's machine-checked output. Mirrors EVALUATION_SCHEMA. */
@@ -84,6 +130,12 @@ export interface Evaluation {
   meetsBar: boolean;
   model: string;
   evaluatedAt: number;
+  /**
+   * The rubric weights this score was computed with. Recorded so an attempt
+   * graded before a teacher edited the exercise's weights still explains its
+   * own total instead of silently disagreeing with a live recomputation.
+   */
+  weights?: Record<RubricKey, number>;
 }
 
 export interface TeacherReview {
@@ -127,6 +179,16 @@ export interface Submission {
 }
 
 export type ExerciseState = 'locked' | 'available' | 'in_review' | 'revision' | 'approved';
+
+/** Per-path completion for one student. Derived, never stored. */
+export interface PathProgress {
+  path: LearningPath;
+  exercises: Exercise[];
+  approved: number;
+  total: number;
+  /** Mean best score across the exercises in this path that have been scored. */
+  average: number;
+}
 
 /** Denormalised per-student, per-exercise state for fast dashboards. */
 export interface ProgressEntry {

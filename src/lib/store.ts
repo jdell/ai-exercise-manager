@@ -1,9 +1,9 @@
-import { equalTo, onValue, orderByChild, query, ref, set, update } from 'firebase/database';
+import { equalTo, onValue, orderByChild, query, ref, remove, set, update } from 'firebase/database';
 import { getDb } from './firebase';
-import type { Role, Submission, UserProfile } from '../types';
+import type { Exercise, Role, Submission, UserProfile } from '../types';
 
 /**
- * Data access for profiles and submissions.
+ * Data access for profiles, submissions, and teacher-authored exercises.
  *
  * Reads are scoped by role on purpose. Database rules let a student read
  * `/submissions` only through a query filtered to their own uid, so
@@ -12,9 +12,10 @@ import type { Role, Submission, UserProfile } from '../types';
  * shape would now be a permission error, which is the point.
  *
  * Writes are narrower still: a student may create their own submission and
- * nothing else, a teacher may write `review`/`status`/`updatedAt`, and
- * `evaluation` and `output` are writable only by the Cloud Function's admin
- * credentials. See database.rules.json.
+ * nothing else, a teacher may write `review`/`status`/`updatedAt` plus the
+ * custom exercises under `/exercises`, and `evaluation` and `output` are
+ * writable only by the Cloud Function's admin credentials. See
+ * database.rules.json.
  */
 
 type Listener<T> = (value: T) => void;
@@ -121,14 +122,56 @@ export async function touchProfile(uid: string): Promise<void> {
 }
 
 // --------------------------------------------------------------------------
+// Custom exercises
+// --------------------------------------------------------------------------
 
-/** Realtime Database rejects `undefined`; drop those keys before writing. */
+/**
+ * Teacher-authored exercises. The built-in five are compiled in, so this node
+ * only ever holds custom ones — useExercises() merges the two. Every signed-in
+ * user may read it; only a teacher may write, which the rules enforce.
+ */
+export function subscribeExercises(
+  cb: Listener<Exercise[]>,
+  onError?: (err: Error) => void,
+): Unsubscribe {
+  const db = getDb();
+  if (!db) {
+    cb([]);
+    return () => {};
+  }
+  return onValue(
+    ref(db, 'exercises'),
+    (snap) => cb(recordToList<Exercise>(snap.val())),
+    (err) => onError?.(err),
+  );
+}
+
+export async function saveExercise(exercise: Exercise): Promise<void> {
+  await update(ref(requireDb(), `exercises/${exercise.id}`), stripUndefined(exercise));
+}
+
+export async function deleteExercise(id: string): Promise<void> {
+  await remove(ref(requireDb(), `exercises/${id}`));
+}
+
+// --------------------------------------------------------------------------
+
+/**
+ * Realtime Database rejects `undefined`; drop those keys before writing.
+ * Recurses into nested objects because exercise records carry them (rubric
+ * weight overrides), and a nested undefined is rejected just the same.
+ */
 function stripUndefined<T extends object>(obj: T): T {
   const out: Record<string, unknown> = {};
   for (const [k, v] of Object.entries(obj)) {
-    if (v !== undefined) out[k] = v;
+    if (v === undefined) continue;
+    out[k] = isPlainObject(v) ? stripUndefined(v) : v;
   }
   return out as T;
+}
+
+function isPlainObject(value: unknown): value is Record<string, unknown> {
+  return typeof value === 'object' && value !== null && !Array.isArray(value);
 }
 
 export function newId(prefix: string): string {

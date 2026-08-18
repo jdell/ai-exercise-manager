@@ -1,7 +1,6 @@
 import { useMemo, useState } from 'react';
-import { useSubmissions } from '../hooks/useData';
-import { EXERCISES, EXERCISE_BY_ID } from '../data/exercises';
-import { PASSING_SCORE, RUBRIC } from '../data/rubric';
+import { useExercises, useSubmissions } from '../hooks/useData';
+import { PASSING_SCORE, RUBRIC, effectiveWeights } from '../data/rubric';
 import { describeError, evaluateSubmission } from '../lib/claude';
 import { buildEvaluatorSystemPrompt } from '../lib/evaluator-prompt';
 import { Alert, EmptyState, Panel, Spinner, relativeTime, scoreTone } from '../components/ui';
@@ -9,13 +8,17 @@ import type { RubricKey } from '../types';
 
 export default function EvaluatorConsole() {
   const { submissions, loading } = useSubmissions();
-  const [selected, setSelected] = useState(EXERCISES[0].id);
+  const { exercises, byId } = useExercises();
+  const [selected, setSelected] = useState(exercises[0]?.id ?? '');
   const [busyId, setBusyId] = useState<string | null>(null);
   const [error, setError] = useState('');
   const [copied, setCopied] = useState(false);
 
-  const exercise = EXERCISE_BY_ID[selected];
-  const systemPrompt = useMemo(() => buildEvaluatorSystemPrompt(exercise), [exercise]);
+  const exercise = byId[selected] ?? exercises[0];
+  const systemPrompt = useMemo(
+    () => (exercise ? buildEvaluatorSystemPrompt(exercise) : ''),
+    [exercise],
+  );
 
   const evaluated = submissions.filter((s) => s.evaluation);
 
@@ -97,7 +100,7 @@ export default function EvaluatorConsole() {
                   className="rounded-lg border border-ink-300 bg-white px-2.5 py-1.5 text-xs text-ink-700"
                   aria-label="Exercise"
                 >
-                  {EXERCISES.map((e) => (
+                  {exercises.map((e) => (
                     <option key={e.id} value={e.id}>
                       {e.order}. {e.title}
                     </option>
@@ -134,7 +137,7 @@ export default function EvaluatorConsole() {
             )}
             <div className="space-y-2">
               {evaluated.slice(0, 40).map((s) => {
-                const ex = EXERCISE_BY_ID[s.exerciseId];
+                const ex = byId[s.exerciseId];
                 const claude = s.evaluation!.weightedTotal;
                 const final = s.review?.finalScore;
                 const delta = final !== undefined ? Math.round((final - claude) * 10) / 10 : null;
@@ -187,15 +190,19 @@ export default function EvaluatorConsole() {
         </div>
 
         <aside className="space-y-6">
-          <Panel title="Rubric" subtitle={`Passing threshold: ${PASSING_SCORE}`}>
+          <Panel
+            title="Rubric"
+            subtitle={`Passing threshold: ${PASSING_SCORE} · weights for ${exercise?.title ?? 'this exercise'}`}
+          >
             <div className="space-y-4">
               {RUBRIC.map((dim) => {
                 const mean = stats?.perDimension.find((d) => d.key === dim.key)?.mean;
+                const weight = effectiveWeights(exercise?.rubricWeights)[dim.key];
                 return (
                   <div key={dim.key}>
                     <div className="flex items-baseline justify-between gap-2">
                       <span className="text-sm font-medium text-ink-800">{dim.label}</span>
-                      <span className="text-xs text-ink-400">{Math.round(dim.weight * 100)}%</span>
+                      <span className="text-xs text-ink-400">{Math.round(weight * 100)}%</span>
                     </div>
                     <p className="mt-0.5 text-xs leading-relaxed text-ink-600">{dim.description}</p>
                     {mean !== undefined && (

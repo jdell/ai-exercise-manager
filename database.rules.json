@@ -24,6 +24,21 @@
       }
     },
 
+    "exercises": {
+      ".read": "auth != null",
+
+      "$exerciseId": {
+        ".write": "auth != null && root.child('users').child(auth.uid).child('role').val() === 'teacher'",
+        ".validate": "!newData.exists() || newData.hasChildren(['id', 'title', 'task', 'order', 'pathId'])",
+
+        "id": { ".validate": "newData.val() === $exerciseId" },
+        "title": { ".validate": "newData.isString() && newData.val().length <= 120" },
+        "task": { ".validate": "newData.isString() && newData.val().length <= 8000" },
+        "brief": { ".validate": "newData.isString() && newData.val().length <= 8000" },
+        "source": { ".validate": "newData.val() === 'custom'" }
+      }
+    },
+
     "submissions": {
       ".indexOn": ["studentId", "exerciseId", "status", "createdAt"],
       ".read": "auth != null && (root.child('users').child(auth.uid).child('role').val() === 'teacher' || (query.orderByChild === 'studentId' && query.equalTo === auth.uid))",
@@ -81,11 +96,6 @@
 
         "$other": { ".validate": false }
       }
-    },
-
-    "exercises": {
-      ".read": "auth != null",
-      ".write": false
     }
   }
 }

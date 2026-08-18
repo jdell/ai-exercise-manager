@@ -1,21 +1,27 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { Link, Navigate, useParams } from 'react-router-dom';
 import { useSession } from '../context/SessionContext';
-import { useStudentProgress, useSubmissions } from '../hooks/useData';
-import { EXERCISE_BY_ID, EXERCISES } from '../data/exercises';
+import { useExercises, useStudentProgress, useSubmissions } from '../hooks/useData';
 import { describeError, evaluateSubmission, runStudentPrompt } from '../lib/claude';
 import { createSubmission, newId } from '../lib/store';
+import { EMPTY_PARTIAL } from '../lib/partial-json';
+import type { PartialEvaluation } from '../lib/partial-json';
 import {
   Alert,
+  CharCounter,
+  DifficultyBadge,
   EmptyState,
+  LiveEvaluation,
   Panel,
+  PathChip,
+  RevisionTimeline,
   RubricBreakdown,
   ScoreRing,
   Spinner,
   StatusBadge,
   relativeTime,
 } from '../components/ui';
-import { PASSING_SCORE } from '../data/rubric';
+import { PASSING_SCORE, effectiveWeights } from '../data/rubric';
 import type { Submission } from '../types';
 
 const MIN_REFLECTION = 40;
@@ -24,15 +30,17 @@ export default function ExerciseWorkspace() {
   const { exerciseId } = useParams<{ exerciseId: string }>();
   const { session } = useSession();
   const { submissions, loading } = useSubmissions();
-  const progress = useStudentProgress(session?.id, submissions);
+  const { exercises, byId, loading: exercisesLoading } = useExercises();
+  const progress = useStudentProgress(session?.id, submissions, exercises);
 
-  const exercise = exerciseId ? EXERCISE_BY_ID[exerciseId] : undefined;
+  const exercise = exerciseId ? byId[exerciseId] : undefined;
   const entry = exerciseId ? progress.get(exerciseId) : undefined;
 
   const attempts = useMemo(
     () => (entry?.attempts ?? []).slice().sort((a, b) => b.attempt - a.attempt),
     [entry],
   );
+  const oldestFirst = useMemo(() => attempts.slice().reverse(), [attempts]);
   const latest = attempts[0];
 
   const [prompt, setPrompt] = useState('');
@@ -43,6 +51,8 @@ export default function ExerciseWorkspace() {
   const [running, setRunning] = useState(false);
   const [submitting, setSubmitting] = useState(false);
   const [stage, setStage] = useState('');
+  /** Claude's evaluation as it streams in. Cleared once the attempt is stored. */
+  const [partial, setPartial] = useState<PartialEvaluation | null>(null);
   const [error, setError] = useState('');
   const [showBrief, setShowBrief] = useState(true);
   const abortRef = useRef<AbortController | null>(null);
@@ -59,18 +69,20 @@ export default function ExerciseWorkspace() {
 
   useEffect(() => () => abortRef.current?.abort(), []);
 
-  if (!exercise) return <Navigate to="/" replace />;
   if (!session) return <Navigate to="/signin" replace />;
 
-  // The lock is derived from submissions, so it is meaningless until they have
-  // loaded — checking early would bounce a deep link to an unlocked exercise.
-  if (loading) return <div className="h-96 animate-pulse rounded-xl bg-ink-100" />;
+  // The lock is derived from submissions and the exercise list is fetched, so
+  // neither is meaningful until both have loaded — checking early would bounce
+  // a deep link to a custom or newly unlocked exercise.
+  if (loading || exercisesLoading) return <div className="h-96 animate-pulse rounded-xl bg-ink-100" />;
+  if (!exercise) return <Navigate to="/" replace />;
   if (entry?.state === 'locked') return <Navigate to="/" replace />;
 
   const state = entry?.state ?? 'available';
   const readOnly = state === 'in_review' || state === 'approved';
   const reflectionShort = reflection.trim().length < MIN_REFLECTION;
   const canSubmit = prompt.trim().length > 0 && !reflectionShort && !submitting && !running;
+  const weights = effectiveWeights(exercise.rubricWeights);
 
   async function handleTestRun() {
     if (!exercise) return;
@@ -132,24 +144,30 @@ export default function ExerciseWorkspace() {
     try {
       await createSubmission(submission);
 
+      // The test-run output is deliberately discarded here: the function re-runs
+      // the recorded prompt itself. The scores still stream back, so the student
+      // watches the evaluation arrive rather than a spinner.
       setStage('Running your prompt and scoring it…');
       setOutput('');
       setOutputFor(null);
-      const result = await evaluateSubmission(submission.id);
+      setPartial(EMPTY_PARTIAL);
+      const result = await evaluateSubmission(submission.id, { onPartial: setPartial });
       setOutput(result.output);
       setStage('');
+      setPartial(null);
     } catch (err) {
       // The function records the failure on the submission itself, so the
       // attempt shows as errored in both dashboards without a second write
       // from here.
       setError(describeError(err));
       setStage('');
+      setPartial(null);
     } finally {
       setSubmitting(false);
     }
   }
 
-  const nextEx = EXERCISES.find((e) => e.order === exercise.order + 1);
+  const nextEx = exercises.find((e) => e.order > exercise.order);
 
   return (
     <div className="space-y-6">
@@ -165,6 +183,12 @@ export default function ExerciseWorkspace() {
           {latest && <StatusBadge status={latest.status} />}
         </div>
         <p className="mt-1 text-sm text-ink-500">{exercise.tagline}</p>
+        <div className="mt-2.5 flex flex-wrap items-center gap-2">
+          <PathChip pathId={exercise.pathId} />
+          <DifficultyBadge difficulty={exercise.difficulty} />
+          <span className="text-xs text-ink-400">{exercise.topic}</span>
+          <span className="text-xs text-ink-400">· about {exercise.estimatedMinutes} min</span>
+        </div>
       </div>
 
       {state === 'approved' && (
@@ -216,7 +240,7 @@ export default function ExerciseWorkspace() {
                 </div>
                 <div>
                   <h3 className="mb-2 text-xs font-semibold tracking-wide text-ink-500 uppercase">
-                    What good looks like
+                    Requirements
                   </h3>
                   <ul className="space-y-1.5">
                     {exercise.successCriteria.map((c) => (
@@ -229,6 +253,17 @@ export default function ExerciseWorkspace() {
                     ))}
                   </ul>
                 </div>
+
+                {(exercise.goodExample || exercise.badExample) && (
+                  <div className="grid gap-3 border-t border-ink-200 pt-4 sm:grid-cols-2">
+                    {exercise.goodExample && (
+                      <ExampleCard tone="good" title="Closer to it" text={exercise.goodExample} />
+                    )}
+                    {exercise.badExample && (
+                      <ExampleCard tone="bad" title="Not this" text={exercise.badExample} />
+                    )}
+                  </div>
+                )}
               </div>
             ) : (
               <p className="truncate text-sm text-ink-500">{exercise.task}</p>
@@ -270,9 +305,9 @@ export default function ExerciseWorkspace() {
               placeholder="Write your prompt here…"
               aria-label="Your prompt"
             />
-            <div className="mt-2 flex items-center justify-between">
+            <div className="mt-2 flex items-center justify-between gap-3">
               <p className="hint">Test runs are unlimited and are never graded.</p>
-              <p className="hint tabular-nums">{prompt.length} chars</p>
+              <CharCounter used={prompt.length} limit={exercise.maxPromptChars} />
             </div>
 
             {exercise.testInput && (
@@ -308,7 +343,7 @@ export default function ExerciseWorkspace() {
           {/* Reflection + submit */}
           <Panel
             title="Reflection"
-            subtitle="Explain why your prompt works — this is 30% of your score."
+            subtitle={`Explain why your prompt works — this is ${Math.round(weights.understanding * 100)}% of your score.`}
           >
             <textarea
               className="input min-h-[9rem] resize-y"
@@ -332,13 +367,19 @@ export default function ExerciseWorkspace() {
               </div>
             )}
 
+            {partial && (
+              <div className="mt-4">
+                <LiveEvaluation partial={partial} stage={stage} weights={weights} />
+              </div>
+            )}
+
             {!readOnly && (
               <div className="mt-5 flex flex-wrap items-center gap-3 border-t border-ink-200 pt-4">
                 <button onClick={handleSubmit} disabled={!canSubmit} className="btn-primary">
                   {submitting && <Spinner />}
                   {submitting ? 'Submitting…' : `Submit attempt ${(entry?.attempts.length ?? 0) + 1}`}
                 </button>
-                {stage && <span className="text-sm text-ink-500">{stage}</span>}
+                {stage && !partial && <span className="text-sm text-ink-500">{stage}</span>}
                 {!submitting && (
                   <span className="hint">
                     Submitting re-runs your prompt on the server, then scores what it produced.
@@ -348,13 +389,26 @@ export default function ExerciseWorkspace() {
             )}
           </Panel>
 
-          {/* Attempt history */}
+          {/* Revision history */}
           {attempts.length > 0 && (
-            <Panel title={`Your attempts (${attempts.length})`}>
-              <div className="space-y-4">
-                {attempts.map((a) => (
-                  <AttemptCard key={a.id} submission={a} />
-                ))}
+            <Panel
+              title={`Your attempts (${attempts.length})`}
+              subtitle={
+                attempts.length > 1
+                  ? 'Every attempt is kept, with the feedback it got.'
+                  : undefined
+              }
+            >
+              <div className="space-y-5">
+                <RevisionTimeline
+                  attempts={oldestFirst}
+                  linkTo={(s) => `/submission/${s.id}`}
+                />
+                <div className="space-y-4">
+                  {attempts.map((a) => (
+                    <AttemptCard key={a.id} submission={a} />
+                  ))}
+                </div>
               </div>
             </Panel>
           )}
@@ -362,16 +416,18 @@ export default function ExerciseWorkspace() {
 
         {/* Sidebar */}
         <aside className="space-y-6">
-          <Panel title="Tips">
-            <ul className="space-y-2.5">
-              {exercise.tips.map((tip) => (
-                <li key={tip} className="flex gap-2.5 text-sm leading-relaxed text-ink-600">
-                  <span aria-hidden="true" className="mt-1 h-1 w-1 shrink-0 rounded-full bg-indigo-400" />
-                  {tip}
-                </li>
-              ))}
-            </ul>
-          </Panel>
+          {exercise.tips.length > 0 && (
+            <Panel title="Tips">
+              <ul className="space-y-2.5">
+                {exercise.tips.map((tip) => (
+                  <li key={tip} className="flex gap-2.5 text-sm leading-relaxed text-ink-600">
+                    <span aria-hidden="true" className="mt-1 h-1 w-1 shrink-0 rounded-full bg-indigo-400" />
+                    {tip}
+                  </li>
+                ))}
+              </ul>
+            </Panel>
+          )}
 
           {latest?.evaluation && (
             <Panel title={`Attempt ${latest.attempt} score`}>
@@ -391,11 +447,31 @@ export default function ExerciseWorkspace() {
               <RubricBreakdown
                 scores={latest.evaluation.scores}
                 overrides={latest.review?.overrides}
+                weights={latest.evaluation.weights ?? weights}
               />
+              <Link
+                to={`/submission/${latest.id}`}
+                className="mt-4 block text-xs font-medium text-indigo-600 hover:underline"
+              >
+                Open the full feedback →
+              </Link>
             </Panel>
           )}
         </aside>
       </div>
+    </div>
+  );
+}
+
+function ExampleCard({ tone, title, text }: { tone: 'good' | 'bad'; title: string; text: string }) {
+  const styles =
+    tone === 'good'
+      ? 'border-emerald-200 bg-emerald-50/60 text-emerald-800'
+      : 'border-rose-200 bg-rose-50/60 text-rose-800';
+  return (
+    <div className={`rounded-lg border p-3.5 ${styles}`}>
+      <p className="mb-1.5 text-xs font-semibold tracking-wide uppercase">{title}</p>
+      <p className="prose-output text-ink-700">{text}</p>
     </div>
   );
 }
@@ -438,6 +514,7 @@ function AttemptCard({ submission }: { submission: Submission }) {
                 scores={submission.evaluation.scores}
                 overrides={submission.review?.overrides}
                 rationale={submission.evaluation.rationale}
+                weights={submission.evaluation.weights}
               />
               <div className="grid gap-4 sm:grid-cols-2">
                 <FeedbackList
@@ -462,6 +539,13 @@ function AttemptCard({ submission }: { submission: Submission }) {
               <p className="text-sm leading-relaxed text-ink-800">{submission.review.comment}</p>
             </div>
           )}
+
+          <Link
+            to={`/submission/${submission.id}`}
+            className="inline-block text-xs font-medium text-indigo-600 hover:underline"
+          >
+            Compare with your other attempts →
+          </Link>
 
           <details className="rounded-lg border border-ink-200 bg-ink-50">
             <summary className="cursor-pointer px-3.5 py-2.5 text-sm font-medium text-ink-700">
