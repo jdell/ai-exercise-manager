@@ -16,11 +16,13 @@ const ROLE_ACCENT: Record<Role, string> = {
 const NAV: Record<Role, { to: string; label: string }[]> = {
   student: [
     { to: '/', label: 'My exercises' },
+    { to: '/progress', label: 'Progress' },
     { to: '/history', label: 'History' },
   ],
   teacher: [
     { to: '/teacher', label: 'Review queue' },
     { to: '/teacher/class', label: 'Class progress' },
+    { to: '/teacher/analytics', label: 'Analytics' },
     { to: '/teacher/exercises', label: 'Exercises' },
     { to: '/evaluator', label: 'Evaluator console' },
   ],

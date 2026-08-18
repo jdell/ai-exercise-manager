@@ -5,6 +5,9 @@ import SignIn from './pages/SignIn';
 import SignUp from './pages/SignUp';
 import StudentDashboard from './pages/StudentDashboard';
 import StudentHistory from './pages/StudentHistory';
+import StudentProgress from './pages/StudentProgress';
+import TeacherAnalytics from './pages/TeacherAnalytics';
+import ReportCard from './pages/ReportCard';
 import ExerciseWorkspace from './pages/ExerciseWorkspace';
 import SubmissionDetail from './pages/SubmissionDetail';
 import TeacherDashboard from './pages/TeacherDashboard';
@@ -84,6 +87,14 @@ function AppRoutes() {
           }
         />
         <Route
+          path="/progress"
+          element={
+            <Protected roles={['student']}>
+              <StudentProgress />
+            </Protected>
+          }
+        />
+        <Route
           path="/submission/:submissionId"
           element={
             <Protected roles={['student', 'teacher']}>
@@ -91,7 +102,28 @@ function AppRoutes() {
             </Protected>
           }
         />
+        {/*
+          A student reaching this route is redirected to their own report by the
+          page itself; a teacher may open any student's. The rules are what stop
+          a student reading someone else's data, not this line.
+        */}
+        <Route
+          path="/report/:studentId"
+          element={
+            <Protected roles={['student', 'teacher']}>
+              <ReportCard />
+            </Protected>
+          }
+        />
 
+        <Route
+          path="/teacher/analytics"
+          element={
+            <Protected roles={['teacher']}>
+              <TeacherAnalytics />
+            </Protected>
+          }
+        />
         <Route
           path="/teacher"
           element={

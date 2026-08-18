@@ -63,6 +63,7 @@ src/
 │   ├── partial-json.ts ← reads a half-written JSON document (streaming preview)
 │   ├── integrity.ts    ← anti-gaming heuristics. SHARED with functions/
 │   ├── calibration.ts  ← teacher-vs-Claude delta, derived from blind scores
+│   ├── analytics.ts    ← every analytics figure, derived from /submissions
 │   ├── auth.ts         ← Firebase Auth + the createProfile call
 │   ├── firebase.ts     ← app/auth/db/functions handles + emulator wiring
 │   └── store.ts        ← database reads and writes, scoped by role
@@ -70,6 +71,7 @@ src/
 │                         (the locking rule), pathProgress()
 ├── context/SessionContext.tsx  ← credential + profile = session
 ├── components/         ← Layout, AuthShell, shared UI primitives
+│   └── charts.tsx      ← inline-SVG chart primitives (no charting dependency)
 ├── pages/              ← one file per route
 └── types/index.ts      ← every shared domain type
 
@@ -243,6 +245,44 @@ full series.
 There is no `/progress` node. Everything is computed from `/submissions` so the
 two can't drift apart. Resist the urge to denormalise for speed until there is a
 measured problem.
+
+### 7a. Analytics are derived too, and charts are hand-rolled
+
+`src/lib/analytics.ts` computes every number the analytics pages and the report
+render, on read, from `/submissions`. Same rule as `computeProgress()` — there
+is no analytics node, and denormalising one would let a dashboard drift from the
+submissions it claims to summarise, silently.
+
+Two conventions run through that file and should not be broken casually:
+
+- **A "score" is the teacher's final score where one exists, Claude's weighted
+  total otherwise.** Charting Claude's number under a label that says "score"
+  misreports the class the moment a teacher overrides.
+- **Divergence counts only reviews that moved a dimension.** A teacher who
+  accepted Claude's score contributes agreement, not a zero-magnitude
+  disagreement, and averaging those in washes the signal out.
+
+`src/components/charts.tsx` is inline SVG with no charting dependency. That is
+load-bearing for the PDF path: a canvas-based library renders blank or
+rasterised through the print pipeline.
+
+Colour follows the form's job — one hue for magnitude, a warm/cool pair with a
+neutral midpoint for polarity, accent-plus-grey for emphasis. There are
+deliberately **no categorical palettes**: nothing here plots independent series
+against each other, so the colourblind-safety problem is avoided rather than
+mitigated. The amber pole measures 2.15:1 against white, so any mark drawn in it
+carries its number as text, and every chart has a table view beside it.
+
+### 7b. "Export as PDF" is the browser's print pipeline
+
+The report at `/report/:studentId` is exported with `window.print()` against the
+`@media print` block in `src/index.css`. No PDF library: one would add a large
+dependency *and* re-implement the layout, so the export would drift from the
+page. What the print rules produce **is** the artifact — anything hidden there is
+absent from the file a guardian receives.
+
+The report's audience is a parent or guardian, not the student. It carries no
+rubric internals, no evaluator mechanics, and no integrity signals.
 
 ### 8. The client never says what a prompt produced
 
