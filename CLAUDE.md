@@ -22,7 +22,7 @@ role any more — the console is a teacher route.
 ## Stack
 
 - **React 19 + TypeScript**, Vite 7, Tailwind CSS v4 (`@tailwindcss/vite`), React Router 7
-- **Firebase Authentication** (email/password), **Realtime Database**, **Cloud Functions v2**
+- **Firebase Authentication** (email/password + Google), **Realtime Database**, **Cloud Functions v2**
 - **Anthropic SDK**, called **only from Cloud Functions** — never from the browser
 - **Firebase Hosting**, deployed by GitHub Actions on push to `main`
 
@@ -166,6 +166,12 @@ Three layers, in order of authority:
    the browser. Every rule that says "teacher" reads
    `root.child('users').child(auth.uid).child('role')`, so the role is
    trustworthy precisely because clients cannot write that field.
+
+   It is deliberately provider-agnostic: email/password and Google both land
+   there, and the only difference is that a typed display name wins over the
+   one on the ID token. Its early return for an existing profile is what makes
+   Google safe — a returning user never reaches the teacher-code check, so
+   re-running the popup with `role: 'teacher'` cannot promote anyone.
 3. **`Protected` in `App.tsx`** is convenience only. It keeps the wrong role
    from staring at a page of denied reads; it stops nobody.
 

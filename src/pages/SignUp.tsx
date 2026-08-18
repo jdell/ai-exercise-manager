@@ -1,9 +1,10 @@
 import { useState } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
 import { useSession } from '../context/SessionContext';
-import { describeAuthError } from '../lib/auth';
+import { describeAuthError, isCancelledPopup } from '../lib/auth';
 import { isFirebaseConfigured } from '../lib/firebase';
 import AuthShell from '../components/AuthShell';
+import { AuthDivider, GoogleButton } from '../components/GoogleButton';
 import { Alert, Spinner } from '../components/ui';
 import type { Role } from '../types';
 
@@ -19,7 +20,7 @@ const ROLE_COPY: Record<Role, { title: string; blurb: string }> = {
 };
 
 export default function SignUp() {
-  const { signUp } = useSession();
+  const { signUp, signInWithGoogle } = useSession();
   const navigate = useNavigate();
   const [role, setRole] = useState<Role>('student');
   const [name, setName] = useState('');
@@ -28,6 +29,12 @@ export default function SignUp() {
   const [teacherCode, setTeacherCode] = useState('');
   const [error, setError] = useState('');
   const [busy, setBusy] = useState(false);
+  const [googleBusy, setGoogleBusy] = useState(false);
+
+  const home = () => (role === 'teacher' ? '/teacher' : '/');
+  // The server rejects a teacher without the code, which would mean creating a
+  // Google credential only to delete it again. Cheaper to ask first.
+  const needsCode = role === 'teacher' && !teacherCode.trim();
 
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
@@ -35,11 +42,29 @@ export default function SignUp() {
     setBusy(true);
     try {
       await signUp({ email, password, displayName: name, role, teacherCode });
-      navigate(role === 'teacher' ? '/teacher' : '/', { replace: true });
+      navigate(home(), { replace: true });
     } catch (err) {
       setError(describeAuthError(err));
     } finally {
       setBusy(false);
+    }
+  }
+
+  /**
+   * Google has no separate sign-up: the popup either finds an existing account
+   * or makes one. The role and code chosen above are used only if this account
+   * has no profile yet — an existing one keeps the role it already has.
+   */
+  async function handleGoogle() {
+    setError('');
+    setGoogleBusy(true);
+    try {
+      await signInWithGoogle({ role, teacherCode });
+      navigate(home(), { replace: true });
+    } catch (err) {
+      if (!isCancelledPopup(err)) setError(describeAuthError(err));
+    } finally {
+      setGoogleBusy(false);
     }
   }
 
@@ -95,7 +120,43 @@ export default function SignUp() {
           </div>
         </fieldset>
 
+        {/* Above the provider choice, because both paths are gated on it. */}
+        {role === 'teacher' && (
+          <div className="mt-4">
+            <label htmlFor="teacherCode" className="label">
+              Teacher signing code
+            </label>
+            <input
+              id="teacherCode"
+              type="password"
+              className="input"
+              value={teacherCode}
+              onChange={(e) => setTeacherCode(e.target.value)}
+              placeholder="••••••••"
+              autoComplete="off"
+              required
+            />
+            <p className="hint mt-1.5">
+              Checked on the server against the{' '}
+              <code className="font-mono">TEACHER_SIGNUP_CODE</code> secret. It is never sent to the
+              browser, so it cannot be read out of the page.
+            </p>
+          </div>
+        )}
+
         <div className="mt-5">
+          <GoogleButton
+            onClick={handleGoogle}
+            busy={googleBusy}
+            disabled={busy || needsCode || !isFirebaseConfigured}
+            label={`Continue with Google as ${ROLE_COPY[role].title.toLowerCase()}`}
+          />
+          {needsCode && <p className="hint mt-1.5">Enter the signing code to continue as a teacher.</p>}
+        </div>
+
+        <AuthDivider>or sign up with email</AuthDivider>
+
+        <div>
           <label htmlFor="name" className="label">
             Your name
           </label>
@@ -144,28 +205,6 @@ export default function SignUp() {
           />
         </div>
 
-        {role === 'teacher' && (
-          <div className="mt-4">
-            <label htmlFor="teacherCode" className="label">
-              Teacher signing code
-            </label>
-            <input
-              id="teacherCode"
-              type="password"
-              className="input"
-              value={teacherCode}
-              onChange={(e) => setTeacherCode(e.target.value)}
-              placeholder="••••••••"
-              autoComplete="off"
-              required
-            />
-            <p className="hint mt-1.5">
-              Checked on the server against the <code className="font-mono">TEACHER_SIGNUP_CODE</code>{' '}
-              secret. It is never sent to the browser, so it cannot be read out of the page.
-            </p>
-          </div>
-        )}
-
         {error && (
           <div className="mt-4">
             <Alert>{error}</Alert>
@@ -175,7 +214,7 @@ export default function SignUp() {
         <button
           type="submit"
           className="btn-primary mt-6 w-full"
-          disabled={busy || !isFirebaseConfigured}
+          disabled={busy || googleBusy || !isFirebaseConfigured}
         >
           {busy && <Spinner />}
           Create {ROLE_COPY[role].title.toLowerCase()} account

@@ -33,8 +33,9 @@ prompt, not a result.
 | **Student** | Writes and tests prompts, submits with a written reflection, sees their score and feedback immediately |
 | **Teacher** | Works a review queue, adjusts any rubric dimension with a slider, approves or sends back with a comment. Also gets the **Evaluator Console**: the exact system prompt Claude receives, every score it has produced, and how far teachers moved each one |
 
-Roles are set at sign-up and stored on the user's profile. Creating a teacher
-account requires a signing code that is checked on the server.
+Sign in with **Google** or with an email and password. Either way the role is
+set at sign-up and stored on the user's profile, and creating a teacher account
+requires a signing code that is checked on the server.
 
 ### The rubric
 
@@ -113,7 +114,10 @@ cp .env.example .env.local
 
 1. Create a project at [console.firebase.google.com](https://console.firebase.google.com)
    and upgrade it to **Blaze**.
-2. **Build → Authentication → Get started → Email/Password → Enable.**
+2. **Build → Authentication → Get started**, then enable both sign-in methods:
+   **Email/Password** and **Google**. Google needs a support email set on the
+   provider; for a custom domain, add it under **Authentication → Settings →
+   Authorized domains** or the popup fails with `auth/unauthorized-domain`.
 3. **Build → Realtime Database → Create Database.** Start in *locked mode*; the
    rules in this repo replace that in step 4.
 4. **Project settings → Your apps → Web** and register an app. Copy the config
@@ -158,8 +162,14 @@ firebase deploy --only functions  # the three callables
 
 ### 4. Create the first teacher account
 
-Open the app, choose **Create an account → Teacher**, and enter the signing code
-you set in step 2. Students sign up the same way without a code.
+Open the app, choose **Create an account → Teacher**, enter the signing code you
+set in step 2, and then either fill in the email form or use **Continue with
+Google**. Students sign up the same way without a code.
+
+Google has no separate sign-up: the popup either finds an existing account or
+makes one, and `createProfile` fills in the profile either way. A first-time
+Google user signing in from the **Sign in** page gets a student account — the
+role and the signing code can only be chosen on the sign-up page.
 
 ---
 
@@ -236,9 +246,16 @@ classroom:
 - **`runPrompt` is authenticated but not rate-limited.** Any signed-in user can
   spend Anthropic tokens, bounded only by a 20,000-character prompt cap and the
   function's `maxInstances`. Add a per-user quota before opening sign-up widely.
-- **Sign-up is open.** Anyone with the URL can create a student account. Firebase
-  Auth supports email verification and domain allow-lists if you need to close
+- **Sign-up is open.** Anyone with a Google account or an email address can
+  create a student account. Firebase Auth supports email verification and, for
+  Google, restricting sign-in to a Workspace domain (`hd`) if you need to close
   that.
+- **Accounts are not linked across providers.** With Firebase's default
+  one-account-per-email setting, signing up with a password and later clicking
+  Google for the same address fails with
+  `auth/account-exists-with-different-credential`. The message tells the user to
+  sign in the way they did the first time; implementing real linking is a
+  separate piece of work.
 
 ---
 

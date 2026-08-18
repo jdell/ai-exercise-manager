@@ -62,7 +62,12 @@ function claudeFailure(err: unknown): HttpsError {
  * VITE_TEACHER_PASSCODE.
  *
  * Calling twice is a no-op that returns the existing profile — sign-up retries
- * must not be able to re-pick a role.
+ * must not be able to re-pick a role, and a returning Google user who already
+ * has a profile never reaches the teacher-code check below.
+ *
+ * It is provider-agnostic on purpose: email/password sign-up and Google
+ * sign-in both land here, and the only difference is where the display name
+ * comes from.
  */
 export const createProfile = onCall({ secrets: [TEACHER_SIGNUP_CODE] }, async (request) => {
   const uid = requireUid(request);
@@ -70,7 +75,19 @@ export const createProfile = onCall({ secrets: [TEACHER_SIGNUP_CODE] }, async (r
   const existing = await profileOf(uid);
   if (existing) return existing;
 
-  const displayName = requireString(request.data?.displayName, 'Your name', 80);
+  // Email/password sign-up types a name into the form; Google sign-in brings
+  // one on the ID token. Prefer what the caller sent so the form still wins,
+  // and fall back to the provider's so a Google user never has to retype it.
+  const typed = typeof request.data?.displayName === 'string' ? request.data.displayName.trim() : '';
+  const fromProvider = typeof request.auth?.token.name === 'string' ? request.auth.token.name.trim() : '';
+  const displayName = (typed || fromProvider).slice(0, 80);
+  if (!displayName) {
+    throw new HttpsError(
+      'invalid-argument',
+      'Your name is required, and your sign-in provider did not supply one.',
+    );
+  }
+
   const wantsTeacher = request.data?.role === 'teacher';
 
   if (wantsTeacher) {

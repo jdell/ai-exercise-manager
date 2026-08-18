@@ -1,18 +1,20 @@
 import { useState } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
 import { useSession } from '../context/SessionContext';
-import { describeAuthError } from '../lib/auth';
+import { describeAuthError, isCancelledPopup } from '../lib/auth';
 import { isFirebaseConfigured } from '../lib/firebase';
 import AuthShell from '../components/AuthShell';
+import { AuthDivider, GoogleButton } from '../components/GoogleButton';
 import { Alert, Spinner } from '../components/ui';
 
 export default function SignIn() {
-  const { signIn, authError } = useSession();
+  const { signIn, signInWithGoogle, authError } = useSession();
   const navigate = useNavigate();
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [error, setError] = useState('');
   const [busy, setBusy] = useState(false);
+  const [googleBusy, setGoogleBusy] = useState(false);
 
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
@@ -26,6 +28,24 @@ export default function SignIn() {
       setError(describeAuthError(err));
     } finally {
       setBusy(false);
+    }
+  }
+
+  /**
+   * A returning Google user keeps whatever role their profile already has —
+   * `role` here only applies to an account signing in for the first time, and
+   * this page cannot check a teacher code, so those start as students.
+   */
+  async function handleGoogle() {
+    setError('');
+    setGoogleBusy(true);
+    try {
+      await signInWithGoogle({ role: 'student' });
+      navigate('/', { replace: true });
+    } catch (err) {
+      if (!isCancelledPopup(err)) setError(describeAuthError(err));
+    } finally {
+      setGoogleBusy(false);
     }
   }
 
@@ -51,6 +71,19 @@ export default function SignIn() {
         )}
 
         <div className="mt-6">
+          <GoogleButton onClick={handleGoogle} busy={googleBusy} disabled={busy || !isFirebaseConfigured} />
+          <p className="hint mt-1.5">
+            First time here? Google sign-in creates a student account. Teachers should use{' '}
+            <Link to="/signup" className="font-medium text-indigo-600 hover:underline">
+              Create an account
+            </Link>
+            .
+          </p>
+        </div>
+
+        <AuthDivider />
+
+        <div>
           <label htmlFor="email" className="label">
             Email
           </label>
@@ -91,10 +124,10 @@ export default function SignIn() {
         <button
           type="submit"
           className="btn-primary mt-6 w-full"
-          disabled={busy || !isFirebaseConfigured}
+          disabled={busy || googleBusy || !isFirebaseConfigured}
         >
           {busy && <Spinner />}
-          Sign in
+          Sign in with email
         </button>
       </form>
     </AuthShell>

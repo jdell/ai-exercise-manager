@@ -1,8 +1,11 @@
 import { FirebaseError } from 'firebase/app';
 import {
+  GoogleAuthProvider,
   createUserWithEmailAndPassword,
+  getAdditionalUserInfo,
   onAuthStateChanged,
   signInWithEmailAndPassword,
+  signInWithPopup,
   signOut as firebaseSignOut,
   updateProfile,
   type User,
@@ -80,6 +83,56 @@ export async function signUp(input: SignUpInput): Promise<UserProfile> {
   }
 }
 
+/** What to make of a Google account that has never signed in here before. */
+export interface GoogleSignInIntent {
+  /** Role to provision if this account has no profile yet. Ignored if it does. */
+  role: Role;
+  teacherCode?: string;
+}
+
+/**
+ * Google sign-in, for both returning and first-time users.
+ *
+ * There is no separate Google "sign up": the popup either matches an existing
+ * Firebase user or mints one. Either way the profile is what decides the role,
+ * and `createProfile` is idempotent — a returning user gets their existing
+ * profile back untouched, so `intent` only matters the first time.
+ */
+export async function signInWithGoogle(intent: GoogleSignInIntent): Promise<UserProfile> {
+  const provider = new GoogleAuthProvider();
+  // Always show the account chooser. On a shared classroom machine, silently
+  // reusing whoever signed in last is a way to submit work as someone else.
+  provider.setCustomParameters({ prompt: 'select_account' });
+
+  const credential = await signInWithPopup(auth(), provider);
+  const isNewUser = getAdditionalUserInfo(credential)?.isNewUser ?? false;
+
+  try {
+    return await createProfile({
+      displayName: credential.user.displayName ?? '',
+      role: intent.role,
+      teacherCode: intent.teacherCode,
+    });
+  } catch (err) {
+    // Same reasoning as signUp: a credential with no profile has no role and
+    // no route will admit it. Roll a brand-new one back; for an account that
+    // already existed, just drop the session rather than delete their login.
+    if (isNewUser) await credential.user.delete().catch(() => undefined);
+    else await firebaseSignOut(auth()).catch(() => undefined);
+    throw err;
+  }
+}
+
+/** Closing the popup is not an error worth showing anyone. */
+export function isCancelledPopup(err: unknown): boolean {
+  return (
+    err instanceof FirebaseError &&
+    (err.code === 'auth/popup-closed-by-user' ||
+      err.code === 'auth/cancelled-popup-request' ||
+      err.code === 'auth/user-cancelled')
+  );
+}
+
 export async function createProfile(data: {
   displayName: string;
   role: Role;
@@ -113,7 +166,17 @@ export function describeAuthError(err: unknown): string {
       case 'auth/network-request-failed':
         return 'Could not reach Firebase. Check your network connection.';
       case 'auth/operation-not-allowed':
-        return 'Email and password sign-in is not enabled on this Firebase project.';
+        return 'That sign-in method is not enabled on this Firebase project.';
+      case 'auth/popup-blocked':
+        return 'Your browser blocked the sign-in window. Allow popups for this site and try again.';
+      case 'auth/popup-closed-by-user':
+      case 'auth/cancelled-popup-request':
+      case 'auth/user-cancelled':
+        return 'Sign-in was cancelled.';
+      case 'auth/account-exists-with-different-credential':
+        return 'An account already exists for that email using a different sign-in method. Sign in the way you did the first time.';
+      case 'auth/unauthorized-domain':
+        return 'Google sign-in is not authorised for this domain. Add it under Authentication → Settings → Authorized domains.';
       default:
         return err.message.replace(/^Firebase:\s*/, '');
     }

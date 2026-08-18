@@ -23,6 +23,8 @@ interface SessionContextValue {
   authError: string;
   signIn: (email: string, password: string) => Promise<void>;
   signUp: (input: auth.SignUpInput) => Promise<void>;
+  /** Google popup. `intent` only applies if the account has no profile yet. */
+  signInWithGoogle: (intent: auth.GoogleSignInIntent) => Promise<void>;
   signOut: () => Promise<void>;
 }
 
@@ -109,14 +111,26 @@ export function SessionProvider({ children }: { children: ReactNode }) {
     }
   }, []);
 
+  // Like signUp, this can leave a credential without a profile for a moment,
+  // so it holds the same flag to stop the effect above signing them out.
+  const signInWithGoogle = useCallback(async (intent: auth.GoogleSignInIntent) => {
+    setAuthError('');
+    provisioning.current = true;
+    try {
+      setProfile(await auth.signInWithGoogle(intent));
+    } finally {
+      provisioning.current = false;
+    }
+  }, []);
+
   const signOut = useCallback(async () => {
     setAuthError('');
     await auth.signOut();
   }, []);
 
   const value = useMemo(
-    () => ({ session, loading, authError, signIn, signUp, signOut }),
-    [session, loading, authError, signIn, signUp, signOut],
+    () => ({ session, loading, authError, signIn, signUp, signInWithGoogle, signOut }),
+    [session, loading, authError, signIn, signUp, signInWithGoogle, signOut],
   );
 
   return <SessionContext.Provider value={value}>{children}</SessionContext.Provider>;
