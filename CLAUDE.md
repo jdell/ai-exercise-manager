@@ -61,6 +61,8 @@ src/
 │   ├── evaluator-prompt.ts ← the grading prompt + schema. SHARED with functions/
 │   ├── claude.ts       ← thin client for the two callables. No SDK, no key
 │   ├── partial-json.ts ← reads a half-written JSON document (streaming preview)
+│   ├── integrity.ts    ← anti-gaming heuristics. SHARED with functions/
+│   ├── calibration.ts  ← teacher-vs-Claude delta, derived from blind scores
 │   ├── analytics.ts    ← every analytics figure, derived from /submissions
 │   ├── auth.ts         ← Firebase Auth + the createProfile call
 │   ├── firebase.ts     ← app/auth/db/functions handles + emulator wiring
@@ -123,6 +125,54 @@ about it too.
 Structured outputs do **not** support numeric range constraints (`minimum`,
 `maximum`), which is why scores are declared as plain integers and clamped in
 `clampScore()` after parsing.
+
+### 2a. Two readers, and what the second one is for
+
+`evaluateSubmission` runs the Opus grade and a Haiku second opinion concurrently
+(`SECOND_OPINION_MODEL` in `functions/src/claude.ts`; set it to `''` or `off` to
+disable). The second pass exists to **disagree**, not to improve accuracy — where
+a fast reader and a deep one split on a dimension, the submission is genuinely
+ambiguous and a teacher should read it.
+
+Three constraints hold that call together:
+
+- **No `output_config.effort`.** The effort parameter is rejected on Haiku 4.5
+  and the request fails outright. Structured outputs *are* supported there,
+  which is the part that matters.
+- **No prior attempts and no worked examples.** The examples exist to pull a
+  grader toward a house standard, which is exactly the anchoring a second
+  opinion must avoid. `buildSecondOpinionSystemPrompt` is a separate prompt for
+  this reason — do not "simplify" it back to the main one.
+- **It cannot fail the grade.** The call swallows its own error and records it
+  on `secondOpinion.error`. A student never loses a score because the cheap
+  pass timed out.
+
+### 2b. Integrity signals are advisory, and stay that way
+
+`src/lib/integrity.ts` runs deterministic anti-gaming checks server-side —
+prompt-vs-worked-example overlap, the brief pasted back, rubric vocabulary
+quoted at the grader, exact word counts, reflections that restate the prompt.
+The evaluator also returns its own `gaming` judgement through the schema.
+
+`concern` is a sort order for teacher attention, never a grade. Nothing in
+`IntegrityReport` changes a score or blocks an approval, and the UI says so
+plainly. Keep it that way: the moment a flag has consequences, it becomes a
+thing to game in its own right.
+
+The detector's output is deliberately **not** shown to students and not fed back
+into the evaluator. A detector whose output the student can see is a detector
+they can tune against.
+
+### 2c. Calibration is measured from blind scores only
+
+`review.blindScores` holds what a teacher scored *before* Claude's numbers were
+revealed, recorded only when they used **Score blind**. `src/lib/calibration.ts`
+counts nothing else — an override typed next to Claude's number measures
+anchoring, not judgement, and averaging the two would flatter the metric. The
+Evaluator Console reports the blind-scored share next to the delta so a thin
+sample is visible rather than implied.
+
+Blind scores are written once and never overwritten by later adjustments.
 
 ### 3. Model selection
 

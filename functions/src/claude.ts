@@ -1,13 +1,17 @@
 import Anthropic from '@anthropic-ai/sdk';
-import type { Evaluation, Exercise, RubricKey, Submission } from '../../src/types';
+import type { Evaluation, Exercise, RubricKey, SecondOpinion, Submission } from '../../src/types';
 import { effectiveWeights, weightedTotal } from '../../src/data/rubric';
+import { checkIntegrity } from '../../src/lib/integrity';
 import {
   EVALUATION_SCHEMA,
+  SECOND_OPINION_SCHEMA,
   buildEvaluationRequest,
   buildEvaluatorSystemPrompt,
   buildRunInput,
+  buildSecondOpinionSystemPrompt,
   clampScore,
   type RawEvaluation,
+  type RawSecondOpinion,
 } from '../../src/lib/evaluator-prompt';
 
 /**
@@ -20,6 +24,20 @@ import {
  */
 
 export const DEFAULT_MODEL = process.env.CLAUDE_MODEL || 'claude-opus-5';
+
+/**
+ * The second reader. Haiku is chosen for speed and cost: it runs concurrently
+ * with the Opus grade and adds a few seconds, not a second minute.
+ *
+ * Set `SECOND_OPINION_MODEL` to '' (or 'off') on the function to disable the
+ * pass entirely — the primary grade is unaffected either way.
+ */
+export const SECOND_OPINION_MODEL = (() => {
+  const configured = process.env.SECOND_OPINION_MODEL;
+  if (configured === undefined) return 'claude-haiku-4-5';
+  const trimmed = configured.trim();
+  return trimmed === '' || trimmed.toLowerCase() === 'off' ? null : trimmed;
+})();
 
 export class RefusalError extends Error {
   constructor(category: string | null | undefined, explanation?: string | null) {
@@ -159,10 +177,27 @@ export async function evaluateSubmission(
   // before a later reweighting still explains its own total.
   const weights = effectiveWeights(exercise.rubricWeights);
 
+  // Deterministic gaming checks, merged with the evaluator's own read. Both are
+  // advisory: neither touches `scores`, and the teacher decides what they mean.
+  const now = Date.now();
+  const integrity = checkIntegrity(
+    { prompt: submission.prompt, reflection: submission.reflection, output: submission.output },
+    exercise,
+    now,
+  );
+  if (parsed.gaming?.suspected) {
+    integrity.modelSuspects = true;
+    integrity.modelNote = parsed.gaming.note ?? '';
+    // A model that spotted something the heuristics missed still deserves the
+    // teacher's attention, so it floors the concern score rather than adding to it.
+    integrity.concern = Math.max(integrity.concern, 35);
+  }
+
   return {
     scores,
     weightedTotal: weightedTotal(scores, weights),
     weights,
+    integrity,
     summary: parsed.summary ?? '',
     strengths: Array.isArray(parsed.strengths) ? parsed.strengths : [],
     improvements: Array.isArray(parsed.improvements) ? parsed.improvements : [],
@@ -174,6 +209,91 @@ export async function evaluateSubmission(
     },
     meetsBar: Boolean(parsed.meetsBar),
     model: message.model,
+    evaluatedAt: Date.now(),
+  };
+}
+
+// ---------------------------------------------------------------------------
+// 3. Second opinion
+// ---------------------------------------------------------------------------
+
+/**
+ * Grades the same submission on a faster model so the teacher can see where two
+ * readers disagree. Runs concurrently with the primary grade.
+ *
+ * Three things differ from the primary call and all three are deliberate:
+ *
+ *   - No `output_config.effort`. The effort parameter is rejected on Haiku 4.5
+ *     — a request carrying it fails outright. Structured outputs *are*
+ *     supported there, which is the part that matters.
+ *   - No thinking parameter. Omitting it means no thinking on this model
+ *     generation, which is the point: this pass buys speed, and depth is what
+ *     the Opus grade is already for.
+ *   - No prior attempts. Growth is scored from the work in front of it, so the
+ *     two readers are judging the same artifact rather than the same history.
+ */
+export async function secondOpinion(
+  apiKey: string,
+  exercise: Exercise,
+  submission: Pick<Submission, 'prompt' | 'reflection' | 'output' | 'attempt'>,
+): Promise<SecondOpinion> {
+  const model = SECOND_OPINION_MODEL;
+  if (!model) throw new Error('The second opinion is disabled on this deployment.');
+
+  const message = await client(apiKey).messages.create({
+    model,
+    max_tokens: 2000,
+    system: [
+      {
+        type: 'text',
+        text: buildSecondOpinionSystemPrompt(exercise),
+        cache_control: { type: 'ephemeral' },
+      },
+    ],
+    output_config: {
+      format: {
+        type: 'json_schema',
+        schema: SECOND_OPINION_SCHEMA as unknown as Record<string, unknown>,
+      },
+    },
+    messages: [
+      { role: 'user', content: buildEvaluationRequest(exercise, submission, []) },
+    ],
+  });
+
+  // Same rule as every other call site: stop_reason before content.
+  if (message.stop_reason === 'refusal') {
+    throw new RefusalError(message.stop_details?.category, message.stop_details?.explanation);
+  }
+  if (message.stop_reason === 'max_tokens') {
+    throw new Error('The second opinion was cut off before it finished.');
+  }
+
+  const raw = textOf(message.content);
+  let parsed: RawSecondOpinion;
+  try {
+    parsed = JSON.parse(raw) as RawSecondOpinion;
+  } catch {
+    throw new Error(`The second reader returned output that was not valid JSON: ${raw.slice(0, 200)}`);
+  }
+
+  const scores: Record<RubricKey, number> = {
+    promptQuality: clampScore(parsed.promptQuality),
+    understanding: clampScore(parsed.understanding),
+    execution: clampScore(parsed.execution),
+    growth: clampScore(parsed.growth),
+  };
+
+  // Scored with the same weights as the primary read, or the totals would
+  // differ for a reason that has nothing to do with disagreement.
+  const weights = effectiveWeights(exercise.rubricWeights);
+
+  return {
+    model: message.model,
+    scores,
+    weightedTotal: weightedTotal(scores, weights),
+    meetsBar: Boolean(parsed.meetsBar),
+    note: parsed.note ?? '',
     evaluatedAt: Date.now(),
   };
 }

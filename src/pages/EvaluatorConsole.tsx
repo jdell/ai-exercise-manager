@@ -1,8 +1,9 @@
 import { useMemo, useState } from 'react';
 import { useExercises, useSubmissions } from '../hooks/useData';
-import { PASSING_SCORE, RUBRIC, effectiveWeights } from '../data/rubric';
+import { PASSING_SCORE, RUBRIC, RUBRIC_KEYS, effectiveWeights } from '../data/rubric';
 import { describeError, evaluateSubmission } from '../lib/claude';
 import { buildEvaluatorSystemPrompt } from '../lib/evaluator-prompt';
+import { DISAGREEMENT_THRESHOLD, calibration } from '../lib/calibration';
 import { Alert, EmptyState, Panel, Spinner, relativeTime, scoreTone } from '../components/ui';
 import type { RubricKey } from '../types';
 
@@ -44,6 +45,30 @@ export default function EvaluatorConsole() {
       : 0;
     const agreed = evaluated.filter((s) => s.review).length - overridden.length;
     return { perDimension, overridden: overridden.length, drift, agreed, total: evaluated.length };
+  }, [evaluated]);
+
+  const calib = useMemo(() => calibration(submissions), [submissions]);
+
+  /** Agreement between the two models, across every submission that has both. */
+  const modelStats = useMemo(() => {
+    const pairs = evaluated.filter((s) => s.evaluation?.secondOpinion?.error === undefined && s.evaluation?.secondOpinion);
+    if (!pairs.length) return { count: 0, meanAbs: 0, contested: 0 };
+    const gaps = pairs.map((s) =>
+      Math.abs(s.evaluation!.secondOpinion!.weightedTotal - s.evaluation!.weightedTotal),
+    );
+    const contested = pairs.filter((s) =>
+      RUBRIC_KEYS.some(
+        (k) =>
+          Math.abs(
+            (s.evaluation!.secondOpinion!.scores[k] ?? 0) - (s.evaluation!.scores[k] ?? 0),
+          ) >= DISAGREEMENT_THRESHOLD,
+      ),
+    ).length;
+    return {
+      count: pairs.length,
+      meanAbs: Math.round((gaps.reduce((a, b) => a + b, 0) / gaps.length) * 10) / 10,
+      contested,
+    };
   }, [evaluated]);
 
   // The function re-reads the submission, re-grades it, and writes the result
@@ -89,6 +114,109 @@ export default function EvaluatorConsole() {
 
       <div className="grid gap-6 lg:grid-cols-[1fr_22rem]">
         <div className="min-w-0 space-y-6">
+          <Panel
+            title="Rubric calibration"
+            subtitle="How far teachers land from Claude when they score without seeing its numbers."
+          >
+            {calib.count === 0 ? (
+              <EmptyState title="No blind scores yet">
+                Open a submission in the review queue and choose <strong>Score blind</strong>. The
+                delta is only meaningful when the teacher scored first — an override entered next
+                to Claude's number measures anchoring, not judgement.
+              </EmptyState>
+            ) : (
+              <div className="space-y-5">
+                <div className="grid gap-4 sm:grid-cols-3">
+                  <Stat
+                    label="Mean gap"
+                    value={`${calib.meanDelta > 0 ? '+' : ''}${calib.meanDelta}`}
+                  />
+                  <Stat label="Mean distance" value={String(calib.meanAbsDelta)} />
+                  <Stat label="Within 5 points" value={`${Math.round(calib.withinFive * 100)}%`} />
+                </div>
+
+                <p className="text-sm leading-relaxed text-ink-600">
+                  {calib.count} of {calib.reviewed} review{calib.reviewed === 1 ? '' : 's'} scored
+                  blind.{' '}
+                  {calib.meanDelta > 2
+                    ? 'Teachers are running more generous than Claude.'
+                    : calib.meanDelta < -2
+                      ? 'Teachers are running harsher than Claude.'
+                      : 'Teachers and Claude are broadly aligned on the total.'}
+                </p>
+
+                <div>
+                  <p className="mb-2.5 text-xs font-semibold tracking-wide text-ink-500 uppercase">
+                    Where the disagreement sits
+                  </p>
+                  <div className="space-y-2">
+                    {RUBRIC.map((dim) => {
+                      const bias = calib.perDimension[dim.key];
+                      return (
+                        <div key={dim.key} className="flex items-center justify-between gap-3">
+                          <span className="text-sm text-ink-700">{dim.label}</span>
+                          <span
+                            className={`text-sm font-semibold tabular-nums ${
+                              Math.abs(bias) >= 10
+                                ? 'text-amber-600'
+                                : Math.abs(bias) >= 5
+                                  ? 'text-ink-700'
+                                  : 'text-ink-400'
+                            }`}
+                          >
+                            {bias > 0 ? '+' : ''}
+                            {bias}
+                          </span>
+                        </div>
+                      );
+                    })}
+                  </div>
+                  <p className="hint mt-2.5">
+                    Teacher minus Claude, averaged. A large number on one dimension usually means
+                    its criteria read differently to a human than they do to the model — that is a
+                    rubric problem worth fixing, not a teacher problem.
+                  </p>
+                </div>
+
+                {calib.trend && (
+                  <div className="rounded-lg border border-ink-200 px-3.5 py-3">
+                    <p className="text-sm text-ink-700">
+                      Distance moved from <strong>{calib.trend.early}</strong> to{' '}
+                      <strong>{calib.trend.late}</strong> between the first and second half of
+                      blind reviews —{' '}
+                      {calib.trend.closing ? 'converging.' : 'diverging.'}
+                    </p>
+                  </div>
+                )}
+              </div>
+            )}
+          </Panel>
+
+          <Panel
+            title="Model agreement"
+            subtitle="Where the fast second reader and the grading model diverge."
+          >
+            {modelStats.count === 0 ? (
+              <EmptyState title="No second opinions recorded">
+                The second pass runs alongside grading when <code>SECOND_OPINION_MODEL</code> is
+                set on the function. Existing scores are unaffected.
+              </EmptyState>
+            ) : (
+              <div className="space-y-4">
+                <div className="grid gap-4 sm:grid-cols-3">
+                  <Stat label="Compared" value={String(modelStats.count)} />
+                  <Stat label="Mean total gap" value={String(modelStats.meanAbs)} />
+                  <Stat label="Contested" value={String(modelStats.contested)} />
+                </div>
+                <p className="text-sm leading-relaxed text-ink-600">
+                  {modelStats.contested === 0
+                    ? 'The two readers have agreed within a few points on every submission so far.'
+                    : `${modelStats.contested} submission${modelStats.contested === 1 ? '' : 's'} had at least one dimension more than ${DISAGREEMENT_THRESHOLD} points apart. Those are the ones worth a human read.`}
+                </p>
+              </div>
+            )}
+          </Panel>
+
           <Panel
             title="Grading instructions"
             subtitle="Sent as the cached system prompt for every submission to this exercise."
