@@ -7,15 +7,21 @@ import { describeError, evaluateSubmission } from '../lib/claude';
 import { saveReview } from '../lib/store';
 import {
   Alert,
+  CopyButton,
   IntegrityPanel,
+  KeyHint,
   Panel,
   ScoreRing,
   SecondOpinionPanel,
+  SkeletonPage,
   Spinner,
   StatusBadge,
   relativeTime,
   scoreTone,
 } from '../components/ui';
+import { useEscapeToGoBack, useSubmitHotkey } from '../hooks/useHotkeys';
+import { feedbackToText } from '../lib/feedback-text';
+import { useLocale } from '../context/LocaleContext';
 import { FeedbackList } from './ExerciseWorkspace';
 import type { RubricKey } from '../types';
 
@@ -25,6 +31,9 @@ export default function TeacherReview() {
   const navigate = useNavigate();
   const { submissions, loading } = useSubmissions();
   const { byId, loading: exercisesLoading } = useExercises();
+  // Teacher screens are English (rule 9), but the copied feedback belongs to
+  // the student it was written for, so it is built with the shared translator.
+  const { t } = useLocale();
 
   const submission = submissions.find((s) => s.id === submissionId);
   const [overrides, setOverrides] = useState<Partial<Record<RubricKey, number>>>({});
@@ -70,7 +79,16 @@ export default function TeacherReview() {
     [submissions, submission],
   );
 
-  if (loading || exercisesLoading) return <div className="h-96 animate-pulse rounded-xl bg-ink-100" />;
+  // Approve is the decision a teacher makes dozens of times in a marking
+  // session, so it is the one bound to the shortcut. Requesting a revision
+  // needs a written comment and stays a deliberate click.
+  const canApprove = Boolean(submission) && busy === null && !blind;
+  useSubmitHotkey(() => void decide('approved'), canApprove);
+  // A typed comment or an override is unsaved work; while there is one, Escape
+  // does nothing rather than discarding it. See useEscapeToGoBack.
+  useEscapeToGoBack('/teacher', !comment.trim() && Object.keys(overrides).length === 0);
+
+  if (loading || exercisesLoading) return <SkeletonPage panels={3} />;
   if (!submission) return <Navigate to="/teacher" replace />;
 
   const exercise = byId[submission.exerciseId];
@@ -265,10 +283,21 @@ export default function TeacherReview() {
               title="Claude's assessment"
               subtitle={`${submission.evaluation.model} · ${relativeTime(submission.evaluation.evaluatedAt)}`}
               action={
-                <button onClick={reEvaluate} disabled={busy !== null} className="btn-secondary px-3 py-1.5 text-xs">
-                  {busy === 'reeval' && <Spinner className="h-3 w-3" />}
-                  Re-evaluate
-                </button>
+                <div className="flex shrink-0 items-center gap-2">
+                  <CopyButton
+                    label="Copy feedback"
+                    text={() =>
+                      feedbackToText(submission, {
+                        exerciseTitle: exercise?.title ?? submission.exerciseId,
+                        t,
+                      })
+                    }
+                  />
+                  <button onClick={reEvaluate} disabled={busy !== null} className="btn-secondary px-3 py-1.5 text-xs">
+                    {busy === 'reeval' && <Spinner className="h-3 w-3" />}
+                    Re-evaluate
+                  </button>
+                </div>
               }
             >
               <p className="text-sm leading-relaxed text-ink-700">{submission.evaluation.summary}</p>
@@ -493,6 +522,7 @@ export default function TeacherReview() {
               >
                 {busy === 'approve' && <Spinner />}
                 Approve &amp; unlock next
+                {canApprove && <KeyHint keys="submit" />}
               </button>
               <button
                 onClick={() => decide('revision')}

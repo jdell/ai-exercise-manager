@@ -7,7 +7,12 @@ import { RUBRIC_KEYS } from '../data/rubric';
 import { achievementsFor, earnedCount } from '../lib/achievements';
 import { formatDuration, studentAnalytics } from '../lib/analytics';
 import { BarChart, Dumbbell, TrendLine } from '../components/charts';
-import { AchievementGrid, EmptyState, Panel } from '../components/ui';
+import {
+  AchievementGrid,
+  EmptyState,
+  Panel,
+  SkeletonPage,
+} from '../components/ui';
 
 /**
  * The student's own analytics. Everything here is derived on read from their
@@ -38,7 +43,7 @@ export default function StudentProgress() {
   );
 
   if (loading || exercisesLoading) {
-    return <div className="h-96 animate-pulse rounded-xl bg-ink-100" />;
+    return <SkeletonPage panels={3} />;
   }
   if (!data) return null;
 

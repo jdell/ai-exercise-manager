@@ -1,3 +1,4 @@
+import { useEffect, useState } from 'react';
 import type { ReactNode } from 'react';
 import { Link } from 'react-router-dom';
 import { useLocale } from '../context/LocaleContext';
@@ -451,6 +452,223 @@ export function EmptyState({ title, children }: { title: string; children?: Reac
       <p className="text-sm font-medium text-ink-700">{title}</p>
       {children && <div className="mt-1.5 text-sm text-ink-500">{children}</div>}
     </div>
+  );
+}
+
+// ---------------------------------------------------------------------------
+// Loading
+// ---------------------------------------------------------------------------
+
+/**
+ * One grey shape.
+ *
+ * Skeletons here are deliberately *shaped* — a card-sized block where a card is
+ * about to be, a row of lines where prose is about to be. A single full-height
+ * rectangle, which is what most of these pages used to render, tells the reader
+ * only that something is happening; a shaped one tells them what is coming and
+ * stops the layout jumping when it lands.
+ *
+ * Marked `aria-hidden`: the shapes are noise to a screen reader, and the
+ * container that holds them carries the one announcement worth making.
+ */
+export function Skeleton({ className = '' }: { className?: string }) {
+  return <div aria-hidden="true" className={`animate-pulse rounded-lg bg-ink-200 ${className}`} />;
+}
+
+/**
+ * Wraps a set of skeletons in one polite announcement, so a screen reader hears
+ * "loading" once instead of hearing nothing at all.
+ */
+export function LoadingRegion({
+  label = 'Loading',
+  className = '',
+  children,
+}: {
+  label?: string;
+  className?: string;
+  children: ReactNode;
+}) {
+  return (
+    <div role="status" aria-busy="true" aria-label={label} className={className}>
+      {children}
+    </div>
+  );
+}
+
+/** Ragged lines, like the paragraph that is about to replace them. */
+export function SkeletonText({ lines = 3 }: { lines?: number }) {
+  const widths = ['w-full', 'w-11/12', 'w-4/5', 'w-full', 'w-3/5'];
+  return (
+    <div className="space-y-2">
+      {Array.from({ length: lines }, (_, i) => (
+        <Skeleton key={i} className={`h-3 ${widths[i % widths.length]}`} />
+      ))}
+    </div>
+  );
+}
+
+/** A panel with a header rule, matching <Panel>. */
+export function SkeletonPanel({ lines = 3, className = '' }: { lines?: number; className?: string }) {
+  return (
+    <div className={`card ${className}`}>
+      <div className="border-b border-ink-200 px-5 py-3.5">
+        <Skeleton className="h-3.5 w-40" />
+      </div>
+      <div className="px-5 py-4">
+        <SkeletonText lines={lines} />
+      </div>
+    </div>
+  );
+}
+
+/** The stat strip several pages open with. */
+export function SkeletonStats({ count = 4 }: { count?: number }) {
+  return (
+    <div className="grid gap-4 sm:grid-cols-4">
+      {Array.from({ length: count }, (_, i) => (
+        <div key={i} className="card p-4">
+          <Skeleton className="h-2.5 w-20" />
+          <Skeleton className="mt-2.5 h-6 w-12" />
+        </div>
+      ))}
+    </div>
+  );
+}
+
+/** Rows with a leading circle, matching the review queue and history lists. */
+export function SkeletonRows({ rows = 4 }: { rows?: number }) {
+  return (
+    <div className="space-y-3">
+      {Array.from({ length: rows }, (_, i) => (
+        <div key={i} className="card flex items-center gap-4 p-4">
+          <Skeleton className="h-[52px] w-[52px] shrink-0 rounded-full" />
+          <div className="min-w-0 flex-1 space-y-2">
+            <Skeleton className="h-3.5 w-1/3" />
+            <Skeleton className="h-3 w-3/4" />
+            <Skeleton className="h-2.5 w-16" />
+          </div>
+        </div>
+      ))}
+    </div>
+  );
+}
+
+/** A grid of cells, for the class progress matrix. */
+export function SkeletonTable({ rows = 6, cols = 9 }: { rows?: number; cols?: number }) {
+  return (
+    <div className="card px-5 py-4">
+      <div className="space-y-3">
+        {Array.from({ length: rows }, (_, r) => (
+          <div key={r} className="flex items-center gap-3">
+            <Skeleton className="h-3.5 w-40 shrink-0" />
+            <div className="flex flex-1 gap-1.5">
+              {Array.from({ length: cols }, (_, c) => (
+                <Skeleton key={c} className="h-7 w-7 shrink-0 rounded-md" />
+              ))}
+            </div>
+          </div>
+        ))}
+      </div>
+    </div>
+  );
+}
+
+/** Title, subtitle, and a body — the shape every detail page opens with. */
+export function SkeletonPage({ panels = 2 }: { panels?: number }) {
+  return (
+    <LoadingRegion className="space-y-6">
+      <div className="space-y-2">
+        <Skeleton className="h-6 w-64" />
+        <Skeleton className="h-3 w-96 max-w-full" />
+      </div>
+      {Array.from({ length: panels }, (_, i) => (
+        <SkeletonPanel key={i} lines={i === 0 ? 4 : 2} />
+      ))}
+    </LoadingRegion>
+  );
+}
+
+// ---------------------------------------------------------------------------
+// Clipboard
+// ---------------------------------------------------------------------------
+
+/**
+ * Copies `text`, and says so for a moment.
+ *
+ * `text` is a thunk rather than a string so a caller can build a page's worth
+ * of feedback on click instead of on every render — this sits inside lists that
+ * re-render on every streamed delta.
+ *
+ * `navigator.clipboard` needs a secure context. On plain http (a classroom
+ * machine reaching a dev server by IP) it is simply absent, so the button says
+ * it could not copy rather than appearing to work. There is no
+ * `document.execCommand` fallback: it is deprecated, it fails silently in its
+ * own ways, and the honest failure is the better one.
+ */
+export function CopyButton({
+  text,
+  label,
+  className = 'btn-ghost px-2 py-1 text-xs',
+}: {
+  text: () => string;
+  /** Overrides the default "Copy". */
+  label?: string;
+  className?: string;
+}) {
+  const { t } = useLocale();
+  const [state, setState] = useState<'idle' | 'copied' | 'failed'>('idle');
+
+  useEffect(() => {
+    if (state === 'idle') return;
+    const timer = window.setTimeout(() => setState('idle'), 2000);
+    return () => window.clearTimeout(timer);
+  }, [state]);
+
+  async function handleCopy() {
+    try {
+      if (!navigator.clipboard?.writeText) throw new Error('unavailable');
+      await navigator.clipboard.writeText(text());
+      setState('copied');
+    } catch {
+      setState('failed');
+    }
+  }
+
+  return (
+    <button type="button" onClick={() => void handleCopy()} className={className}>
+      <span aria-hidden="true">{state === 'copied' ? '✓' : state === 'failed' ? '✕' : '⧉'}</span>
+      {state === 'copied'
+        ? t('common.copied')
+        : state === 'failed'
+          ? t('common.copyFailed')
+          : (label ?? t('common.copy'))}
+    </button>
+  );
+}
+
+// ---------------------------------------------------------------------------
+// Keyboard hints
+// ---------------------------------------------------------------------------
+
+/** True on Apple platforms, where the modifier is ⌘ rather than Ctrl. */
+function isApple(): boolean {
+  if (typeof navigator === 'undefined') return false;
+  return /Mac|iPhone|iPad|iPod/.test(navigator.platform || navigator.userAgent);
+}
+
+/**
+ * The keys, spelled the way this machine spells them.
+ *
+ * A shortcut nobody is told about is a shortcut nobody uses, and printing
+ * "Ctrl" to a room of MacBooks is worse than printing nothing. Hidden below
+ * `sm`, where there is no keyboard to press.
+ */
+export function KeyHint({ keys }: { keys: 'submit' | 'escape' }) {
+  const combo = keys === 'submit' ? (isApple() ? '⌘ ↵' : 'Ctrl ↵') : 'Esc';
+  return (
+    <kbd className="hidden rounded border border-ink-300 bg-ink-50 px-1.5 py-0.5 font-sans text-[11px] font-medium text-ink-500 sm:inline-block">
+      {combo}
+    </kbd>
   );
 }
 

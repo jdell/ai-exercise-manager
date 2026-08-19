@@ -12,6 +12,7 @@ import {
   EmptyState,
   Panel,
   PathChip,
+  SkeletonText,
   Spinner,
   relativeTime,
 } from '../components/ui';
@@ -429,7 +430,7 @@ export default function TeacherExercises() {
         title={`Custom exercises (${custom.length})`}
         subtitle="Stored in the database and merged into the board for every student."
       >
-        {loading && <div className="h-24 animate-pulse rounded-lg bg-ink-100" />}
+        {loading && <SkeletonText lines={3} />}
         {!loading && custom.length === 0 && (
           <EmptyState title="No custom exercises yet">
             Add one to extend the track past the built-in five.

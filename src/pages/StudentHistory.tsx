@@ -3,7 +3,15 @@ import { useSession } from '../context/SessionContext';
 import { useLocale } from '../context/LocaleContext';
 import { useExercises, useSubmissions } from '../hooks/useData';
 import { localizeExercise } from '../data/exercises';
-import { EmptyState, Panel, RubricBreakdown, StatusBadge, relativeTime, scoreTone } from '../components/ui';
+import {
+  EmptyState,
+  Panel,
+  RubricBreakdown,
+  SkeletonRows,
+  StatusBadge,
+  relativeTime,
+  scoreTone,
+} from '../components/ui';
 import { FeedbackList } from './ExerciseWorkspace';
 
 export default function StudentHistory() {
@@ -20,7 +28,7 @@ export default function StudentHistory() {
         <p className="mt-1 text-sm text-ink-500">{t('history.subtitle')}</p>
       </div>
 
-      {loading && <div className="h-40 animate-pulse rounded-xl bg-ink-100" />}
+      {loading && <SkeletonRows rows={3} />}
 
       {!loading && mine.length === 0 && (
         <EmptyState title={t('history.empty')}>

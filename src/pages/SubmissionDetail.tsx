@@ -7,13 +7,17 @@ import { localizeExercise } from '../data/exercises';
 import { PASSING_SCORE, effectiveWeights } from '../data/rubric';
 import {
   Alert,
+  CopyButton,
   Panel,
   RevisionTimeline,
   RubricBreakdown,
   ScoreRing,
+  SkeletonPage,
   StatusBadge,
   relativeTime,
 } from '../components/ui';
+import { useEscapeToGoBack } from '../hooks/useHotkeys';
+import { feedbackToText } from '../lib/feedback-text';
 import { FeedbackList } from './ExerciseWorkspace';
 
 /**
@@ -36,8 +40,12 @@ export default function SubmissionDetail() {
     [submissions, submission],
   );
 
+  // Nothing on this page is editable, so Escape always goes back — this is the
+  // read-only side of the asymmetry documented in useEscapeToGoBack.
+  useEscapeToGoBack('/history');
+
   if (!session) return <Navigate to="/signin" replace />;
-  if (loading || exercisesLoading) return <div className="h-96 animate-pulse rounded-xl bg-ink-100" />;
+  if (loading || exercisesLoading) return <SkeletonPage panels={3} />;
   if (!submission) return <Navigate to="/history" replace />;
   // Students only ever see their own work; teachers have their own review page
   // but can follow a link here without being bounced.
@@ -128,6 +136,18 @@ export default function SubmissionDetail() {
             <Panel
               title={t('detail.claudeFeedback')}
               subtitle={`${submission.evaluation.model} · ${relativeTime(submission.evaluation.evaluatedAt)}`}
+              action={
+                <CopyButton
+                  className="btn-secondary shrink-0 px-3 py-1.5 text-xs"
+                  label={t('common.copyFeedback')}
+                  text={() =>
+                    feedbackToText(submission, {
+                      exerciseTitle: exercise?.title ?? submission.exerciseId,
+                      t,
+                    })
+                  }
+                />
+              }
             >
               <div className="space-y-4">
                 <p className="text-sm leading-relaxed text-ink-700">
@@ -167,14 +187,20 @@ export default function SubmissionDetail() {
           )}
 
           {!previous && (
-            <Panel title={t('detail.promptYouSubmitted')}>
+            <Panel
+              title={t('detail.promptYouSubmitted')}
+              action={<CopyButton text={() => submission.prompt} />}
+            >
               <pre className="prose-output scroll-slim max-h-96 overflow-auto rounded-lg bg-ink-50 p-4 font-mono text-ink-800">
                 {submission.prompt}
               </pre>
             </Panel>
           )}
 
-          <Panel title={t('detail.whatItProduced')}>
+          <Panel
+            title={t('detail.whatItProduced')}
+            action={submission.output ? <CopyButton text={() => submission.output} /> : undefined}
+          >
             <pre className="prose-output scroll-slim max-h-96 overflow-auto rounded-lg bg-ink-50 p-4 text-ink-800">
               {submission.output || t('detail.noOutputCaptured')}
             </pre>

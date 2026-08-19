@@ -6,7 +6,13 @@ import { useExercises, useStudents, useSubmissions } from '../hooks/useData';
 import { PASSING_SCORE, RUBRIC_KEYS } from '../data/rubric';
 import { formatDuration, studentAnalytics } from '../lib/analytics';
 import { BarChart, TrendLine } from '../components/charts';
-import { EmptyState, relativeTime, scoreTone } from '../components/ui';
+import {
+  EmptyState,
+  SkeletonPage,
+  relativeTime,
+  scoreTone,
+} from '../components/ui';
+import { useEscapeToGoBack } from '../hooks/useHotkeys';
 
 /**
  * A one-page progress report for a parent or guardian.
@@ -51,10 +57,15 @@ export default function ReportCard() {
     [targetId, name, submissions, exercises],
   );
 
+  // A pure view: nothing here is editable, so Escape always goes back. It sits
+  // above the redirects because a hook after a conditional return changes the
+  // hook count on the render where that condition flips.
+  useEscapeToGoBack(isTeacher ? '/teacher/analytics' : '/progress');
+
   if (!session) return <Navigate to="/signin" replace />;
   if (!targetId) return <Navigate to="/" replace />;
   if (loading || exercisesLoading) {
-    return <div className="h-96 animate-pulse rounded-xl bg-ink-100" />;
+    return <SkeletonPage panels={2} />;
   }
   if (!data) return null;
 

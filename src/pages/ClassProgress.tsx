@@ -1,7 +1,15 @@
 import { Link } from 'react-router-dom';
 import { computeProgress, useExercises, useStudents, useSubmissions } from '../hooks/useData';
 import { useClassFilter } from '../context/ClassContext';
-import { ClassScopeNote, EmptyState, Panel, relativeTime, scoreTone } from '../components/ui';
+import {
+  ClassScopeNote,
+  EmptyState,
+  Panel,
+  SkeletonTable,
+  relativeTime,
+  scoreTone,
+} from '../components/ui';
+import { downloadCsv, progressToCsv, stampedFilename } from '../lib/csv';
 import type { ExerciseState } from '../types';
 
 const CELL: Record<ExerciseState, { className: string; glyph: string; title: string }> = {
@@ -37,15 +45,33 @@ export default function ClassProgress() {
 
   return (
     <div className="space-y-6">
-      <div>
-        <h1 className="text-2xl font-semibold text-ink-900">Class progress</h1>
-        <p className="mt-1 text-sm text-ink-500">
-          Where each student sits in the locked progression.
-        </p>
-        <ClassScopeNote count={students.length} />
+      <div className="flex flex-wrap items-start justify-between gap-4">
+        <div>
+          <h1 className="text-2xl font-semibold text-ink-900">Class progress</h1>
+          <p className="mt-1 text-sm text-ink-500">
+            Where each student sits in the locked progression.
+          </p>
+          <ClassScopeNote count={students.length} />
+        </div>
+        {/* The same grid the table renders, for a gradebook that is not this one. */}
+        <button
+          onClick={() =>
+            downloadCsv(
+              stampedFilename('class-progress'),
+              progressToCsv(students, exercises, (uid) =>
+                computeProgress(uid, submissions, exercises),
+              ),
+            )
+          }
+          disabled={students.length === 0}
+          className="btn-secondary"
+          title="Download this grid as a CSV"
+        >
+          Export CSV
+        </button>
       </div>
 
-      {loading && <div className="h-64 animate-pulse rounded-xl bg-ink-100" />}
+      {loading && <SkeletonTable rows={5} cols={Math.min(exercises.length, 9)} />}
 
       {!loading && students.length === 0 && (
         <EmptyState title={allStudents.length === 0 ? 'No students yet' : 'Nobody in this class'}>
