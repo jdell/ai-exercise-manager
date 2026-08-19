@@ -6,6 +6,10 @@ import type { Exercise, LearningPath, PathId } from '../types';
  * Grouping only: the unlock chain still runs across every exercise in `order`,
  * so a path is a lens on the same progression rather than a parallel one. One
  * chain keeps computeProgress() the single source of truth for locking.
+ *
+ * The titles and blurbs here are the canonical English. What a student reads
+ * comes from the `path.<id>.*` keys in the i18n dictionary — these two must be
+ * kept in step, and the dictionary is the one on screen.
  */
 export const PATHS: LearningPath[] = [
   {
@@ -22,8 +26,8 @@ export const PATHS: LearningPath[] = [
   },
   {
     id: 'domain',
-    title: 'Domain-Specific',
-    blurb: 'Prompts built for one subject or workflow.',
+    title: 'Real-World Challenges',
+    blurb: 'Applied briefs where the output has somewhere to go.',
     accent: 'bg-teal-50 text-teal-700 border-teal-200',
   },
 ];

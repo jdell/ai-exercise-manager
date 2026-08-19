@@ -1,5 +1,6 @@
 import type { Exercise, RubricKey, Submission } from '../types';
 import { RUBRIC_KEYS } from '../data/rubric';
+import { pluralActive, tActive } from './i18n';
 
 /**
  * Every number the analytics pages render, derived from /submissions on read.
@@ -318,15 +319,18 @@ export function classAnalytics(
 // ---------------------------------------------------------------------------
 
 /** Durations for humans: "3 days", "5 hours", "12 min". */
+/**
+ * Reads the active locale rather than taking a translator — it is called from
+ * table cells and chart labels during render. Same reasoning as `relativeTime`.
+ */
 export function formatDuration(ms: number | null | undefined): string {
-  if (ms === null || ms === undefined) return '—';
-  if (ms < 60_000) return 'under a minute';
+  if (ms === null || ms === undefined) return tActive('duration.none');
+  if (ms < 60_000) return tActive('duration.underMinute');
   const minutes = Math.round(ms / 60_000);
-  if (minutes < 60) return `${minutes} min`;
-  const hours = ms / 3_600_000;
-  if (hours < 48) return `${Math.round(hours)} hour${Math.round(hours) === 1 ? '' : 's'}`;
-  const days = Math.round(ms / DAY);
-  return `${days} day${days === 1 ? '' : 's'}`;
+  if (minutes < 60) return tActive('duration.minutes', { n: minutes });
+  const hours = Math.round(ms / 3_600_000);
+  if (hours < 48) return pluralActive('duration.hours', hours);
+  return pluralActive('duration.days', Math.round(ms / DAY));
 }
 
 export const formatPercent = (fraction: number): string => `${Math.round(fraction * 100)}%`;

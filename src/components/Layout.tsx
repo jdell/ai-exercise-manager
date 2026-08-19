@@ -1,35 +1,36 @@
 import { Navigate, NavLink, Outlet, useNavigate } from 'react-router-dom';
 import { useSession } from '../context/SessionContext';
+import { useLocale } from '../context/LocaleContext';
 import { usingEmulators } from '../lib/firebase';
+import { LanguagePicker } from './ui';
+import type { MessageKey } from '../lib/i18n';
 import type { Role } from '../types';
-
-const ROLE_LABEL: Record<Role, string> = {
-  student: 'Student',
-  teacher: 'Teacher',
-};
 
 const ROLE_ACCENT: Record<Role, string> = {
   student: 'bg-indigo-100 text-indigo-700',
   teacher: 'bg-emerald-100 text-emerald-700',
 };
 
-const NAV: Record<Role, { to: string; label: string }[]> = {
+const NAV: Record<Role, { to: string; label: MessageKey }[]> = {
   student: [
-    { to: '/', label: 'My exercises' },
-    { to: '/progress', label: 'Progress' },
-    { to: '/history', label: 'History' },
+    { to: '/', label: 'nav.exercises' },
+    { to: '/progress', label: 'nav.progress' },
+    { to: '/history', label: 'nav.history' },
+    { to: '/playground', label: 'nav.playground' },
   ],
   teacher: [
-    { to: '/teacher', label: 'Review queue' },
-    { to: '/teacher/class', label: 'Class progress' },
-    { to: '/teacher/analytics', label: 'Analytics' },
-    { to: '/teacher/exercises', label: 'Exercises' },
-    { to: '/evaluator', label: 'Evaluator console' },
+    { to: '/teacher', label: 'nav.reviewQueue' },
+    { to: '/teacher/class', label: 'nav.classProgress' },
+    { to: '/teacher/analytics', label: 'nav.analytics' },
+    { to: '/teacher/exercises', label: 'nav.manageExercises' },
+    { to: '/playground', label: 'nav.playground' },
+    { to: '/evaluator', label: 'nav.evaluator' },
   ],
 };
 
 export default function Layout() {
   const { session, signOut } = useSession();
+  const { t } = useLocale();
   const navigate = useNavigate();
 
   // Layout wraps every authenticated route, so the signed-out redirect has to
@@ -53,26 +54,28 @@ export default function Layout() {
               🧠
             </span>
             <span className="hidden text-sm leading-tight font-semibold text-ink-900 sm:block">
-              AI Skills
-              <span className="block text-[11px] font-normal text-ink-500">Exercise Manager</span>
+              {t('app.name')}
+              <span className="block text-[11px] font-normal text-ink-500">
+                {t('app.subtitle')}
+              </span>
             </span>
           </button>
 
-          <nav className="flex items-center gap-1">
+          <nav className="scroll-slim flex items-center gap-1 overflow-x-auto">
             {links.map((link) => (
               <NavLink
                 key={link.to}
                 to={link.to}
                 end={link.to === '/' || link.to === '/teacher'}
                 className={({ isActive }) =>
-                  `rounded-lg px-3 py-1.5 text-sm font-medium transition-colors ${
+                  `rounded-lg px-3 py-1.5 text-sm font-medium whitespace-nowrap transition-colors ${
                     isActive
                       ? 'bg-ink-100 text-ink-900'
                       : 'text-ink-600 hover:bg-ink-50 hover:text-ink-900'
                   }`
                 }
               >
-                {link.label}
+                {t(link.label)}
               </NavLink>
             ))}
           </nav>
@@ -80,12 +83,14 @@ export default function Layout() {
           <div className="ml-auto flex items-center gap-2">
             {usingEmulators && (
               <span
-                title="Talking to the local Firebase emulator suite, not your real project."
+                title={t('layout.emulatorsTitle')}
                 className="hidden rounded-full border border-ink-300 bg-ink-50 px-2.5 py-1 text-xs font-medium text-ink-600 lg:block"
               >
-                Emulators
+                {t('layout.emulators')}
               </span>
             )}
+
+            <LanguagePicker />
 
             {/*
               The role is a claim on the server, not a UI toggle — it comes from
@@ -94,7 +99,7 @@ export default function Layout() {
             <span
               className={`rounded-full px-2.5 py-1 text-xs font-medium ${ROLE_ACCENT[session.role]}`}
             >
-              {ROLE_LABEL[session.role]}
+              {t(`role.${session.role}`)}
             </span>
 
             <NavLink
@@ -102,8 +107,8 @@ export default function Layout() {
               className={({ isActive }) =>
                 `rounded-lg p-2 transition-colors ${isActive ? 'bg-ink-100 text-ink-900' : 'text-ink-500 hover:bg-ink-50 hover:text-ink-900'}`
               }
-              aria-label="Settings"
-              title="Settings"
+              aria-label={t('nav.settings')}
+              title={t('nav.settings')}
             >
               <svg className="h-4 w-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
                 <circle cx="12" cy="12" r="3" />
@@ -114,7 +119,7 @@ export default function Layout() {
             <div className="hidden items-center gap-2 border-l border-ink-200 pl-3 sm:flex">
               <span className="max-w-[10rem] truncate text-sm text-ink-700">{session.name}</span>
               <button onClick={() => void signOut()} className="btn-ghost px-2 py-1 text-xs">
-                Sign out
+                {t('nav.signOut')}
               </button>
             </div>
           </div>
@@ -126,9 +131,7 @@ export default function Layout() {
       </main>
 
       <footer className="border-t border-ink-200 py-5">
-        <p className="mx-auto max-w-7xl px-4 text-xs text-ink-400 sm:px-6">
-          Scored by Claude against a fixed rubric · Every score is reviewed by a teacher before it counts
-        </p>
+        <p className="mx-auto max-w-7xl px-4 text-xs text-ink-400 sm:px-6">{t('layout.footer')}</p>
       </footer>
     </div>
   );

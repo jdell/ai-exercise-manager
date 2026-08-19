@@ -3,6 +3,15 @@
 export type Role = 'student' | 'teacher';
 
 /**
+ * The languages the app is written in.
+ *
+ * This is a domain type rather than a UI setting because it travels: a
+ * submission records the language its author was working in, and the evaluator
+ * writes its feedback in that language. Scores never depend on it.
+ */
+export type Locale = 'en' | 'es';
+
+/**
  * A user's profile record at /users/$uid.
  *
  * `role` is written only by the createProfile Cloud Function; database rules
@@ -54,6 +63,48 @@ export interface LearningPath {
 }
 
 export type Difficulty = 'intro' | 'core' | 'advanced';
+
+/**
+ * The applied framing on a real-world challenge: who the student is standing
+ * in for, and what happens to the output once it leaves their hands.
+ *
+ * It is not decoration. The evaluator is told the scenario, so a prompt is
+ * judged on whether it would survive contact with the stated reader — which is
+ * the whole difference between these exercises and the technique drills.
+ */
+export interface Scenario {
+  /** The seat the student is sitting in, e.g. "Discharge nurse". */
+  role: string;
+  /** The situation, in one or two sentences. */
+  context: string;
+  /** Who receives the output, and what they do with it. */
+  stakeholder: string;
+  /** What going wrong actually costs here. Grounds the constraints. */
+  atStake: string;
+}
+
+/**
+ * A translated exercise. Only the text a student reads is translated; `id`,
+ * `order`, weights, and `evaluatorNotes` are not, because grading must not
+ * change with the reader's language.
+ *
+ * `testInput` is translatable but usually left alone — the material is meant to
+ * be the artifact as it would really arrive.
+ */
+export interface ExerciseTranslation {
+  title?: string;
+  tagline?: string;
+  brief?: string;
+  task?: string;
+  tips?: string[];
+  successCriteria?: string[];
+  starterPrompt?: string;
+  testInput?: string;
+  topic?: string;
+  goodExample?: string;
+  badExample?: string;
+  scenario?: Scenario;
+}
 
 export interface Exercise {
   id: string;
@@ -108,6 +159,18 @@ export interface Exercise {
    * whole set is normalised to sum to 1 by effectiveWeights().
    */
   rubricWeights?: Partial<Record<RubricKey, number>>;
+  /**
+   * Present on real-world challenges: the applied situation the prompt has to
+   * work inside. Absent on the technique drills, which are deliberately
+   * context-free.
+   */
+  scenario?: Scenario;
+  /**
+   * Translations of the student-facing text, keyed by locale. The record above
+   * is the canonical version and is what the evaluator is always given —
+   * localisation changes what the student reads, never how they are graded.
+   */
+  i18n?: Partial<Record<Locale, ExerciseTranslation>>;
   /** Built-in exercises ship in code; custom ones are authored by teachers. */
   source: 'builtin' | 'custom';
   createdAt?: number;
@@ -243,10 +306,50 @@ export interface Submission {
   status: SubmissionStatus;
   createdAt: number;
   updatedAt: number;
+  /**
+   * The language the student was working in. The evaluator writes its feedback
+   * in it; the rubric, the scores, and the exercise it grades against are the
+   * same either way. Absent on everything submitted before Phase 6, which reads
+   * as 'en'.
+   */
+  locale?: Locale;
   evaluation?: Evaluation;
   review?: TeacherReview;
   /** Populated when status is 'error'. */
   error?: string;
+}
+
+/**
+ * A badge a student has earned. Derived from /submissions on read, exactly like
+ * progress and analytics — there is no achievements node, so a badge can never
+ * disagree with the work that earned it.
+ *
+ * The copy lives in the i18n dictionary under `achievement.<id>.*`, not here,
+ * so a badge reads in the student's language.
+ */
+export type AchievementId =
+  | 'first_approval'
+  | 'first_time_right'
+  | 'turned_it_around'
+  | 'full_marks_dimension'
+  | 'shows_the_working'
+  | 'four_across'
+  | 'kept_at_it'
+  | 'into_the_field'
+  | 'path_complete'
+  | 'track_complete';
+
+export interface Achievement {
+  id: AchievementId;
+  /** Set on badges that exist once per learning path. */
+  pathId?: PathId;
+  /** Filled into the badge's copy, e.g. a path title or a score. */
+  vars?: Record<string, string | number>;
+  earned: boolean;
+  /** When it was earned, from the submission that earned it. */
+  earnedAt?: number;
+  /** Progress toward an unearned badge, 0–1. Undefined when it is all-or-nothing. */
+  progress?: number;
 }
 
 export type ExerciseState = 'locked' | 'available' | 'in_review' | 'revision' | 'approved';

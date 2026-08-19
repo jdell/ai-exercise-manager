@@ -1,5 +1,12 @@
 import Anthropic from '@anthropic-ai/sdk';
-import type { Evaluation, Exercise, RubricKey, SecondOpinion, Submission } from '../../src/types';
+import type {
+  Evaluation,
+  Exercise,
+  Locale,
+  RubricKey,
+  SecondOpinion,
+  Submission,
+} from '../../src/types';
 import { effectiveWeights, weightedTotal } from '../../src/data/rubric';
 import { checkIntegrity } from '../../src/lib/integrity';
 import {
@@ -106,16 +113,74 @@ export async function runStudentPrompt(
 }
 
 // ---------------------------------------------------------------------------
+// 1b. Run a playground experiment
+// ---------------------------------------------------------------------------
+
+/**
+ * A free-form run for the prompt playground.
+ *
+ * Every other call here is bounded by something the server chose: an exercise
+ * id resolves to material the caller cannot supply, a submission id resolves to
+ * a prompt already written to the database. This one is not — the caller
+ * supplies both the prompt and the material, which makes it the closest thing
+ * in the system to a general-purpose Claude proxy.
+ *
+ * That is the price of a playground, and it is paid for deliberately: a course
+ * about prompting in which you cannot try a prompt is a worse course. The
+ * compensating controls are all in the callable that wraps this one —
+ * authentication, character caps, and a per-user quota, which the graded paths
+ * do not have. Do not call this from anywhere else.
+ *
+ * Nothing is written to the database. A playground run leaves no record, which
+ * is what lets students experiment without it looking like work being marked.
+ */
+export async function runPlaygroundPrompt(
+  apiKey: string,
+  prompt: string,
+  material: string,
+  onDelta?: (chunk: string) => void,
+): Promise<RunResult> {
+  const stream = client(apiKey).messages.stream({
+    model: DEFAULT_MODEL,
+    max_tokens: 4000,
+    // Cheaper than a graded run on purpose: the student is comparing two
+    // outputs against each other, and depth is not the variable under test.
+    output_config: { effort: 'low' },
+    messages: [{ role: 'user', content: buildRunInput(prompt, material || undefined) }],
+  });
+
+  if (onDelta) stream.on('text', onDelta);
+
+  const message = await stream.finalMessage();
+
+  // Same rule as every other call site: stop_reason before content.
+  if (message.stop_reason === 'refusal') {
+    throw new RefusalError(message.stop_details?.category, message.stop_details?.explanation);
+  }
+
+  return {
+    output: textOf(message.content),
+    inputTokens: message.usage.input_tokens,
+    outputTokens: message.usage.output_tokens,
+  };
+}
+
+// ---------------------------------------------------------------------------
 // 2. Grade a submission
 // ---------------------------------------------------------------------------
 
 export async function evaluateSubmission(
   apiKey: string,
   exercise: Exercise,
-  submission: Pick<Submission, 'prompt' | 'reflection' | 'output' | 'attempt'>,
+  submission: Pick<Submission, 'prompt' | 'reflection' | 'output' | 'attempt' | 'locale'>,
   priorAttempts: Submission[] = [],
   onDelta?: (chunk: string) => void,
 ): Promise<Evaluation> {
+  // The language the student was working in, taken from the stored submission
+  // rather than the request, and narrowed here so an unrecognised value cannot
+  // reach the prompt.
+  const locale: Locale = submission.locale === 'es' ? 'es' : 'en';
+
   // Streamed so the student can watch the evaluation arrive. The structured
   // output still lands as one JSON document; the deltas are fragments of it,
   // which is why the client previews them with a lenient reader.
@@ -125,9 +190,10 @@ export async function evaluateSubmission(
     system: [
       {
         type: 'text',
-        text: buildEvaluatorSystemPrompt(exercise),
+        text: buildEvaluatorSystemPrompt(exercise, locale),
         // The system prompt is identical for every submission to this
-        // exercise, so it caches across the whole class.
+        // exercise in this language, so it caches across the whole class —
+        // a bilingual class simply keeps two entries warm instead of one.
         cache_control: { type: 'ephemeral' },
       },
     ],

@@ -1,6 +1,7 @@
 import { useState } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
 import { useSession } from '../context/SessionContext';
+import { useLocale } from '../context/LocaleContext';
 import { describeAuthError, isCancelledPopup } from '../lib/auth';
 import { isFirebaseConfigured } from '../lib/firebase';
 import AuthShell from '../components/AuthShell';
@@ -8,19 +9,11 @@ import { AuthDivider, GoogleButton } from '../components/GoogleButton';
 import { Alert, Spinner } from '../components/ui';
 import type { Role } from '../types';
 
-const ROLE_COPY: Record<Role, { title: string; blurb: string }> = {
-  student: {
-    title: 'Student',
-    blurb: 'Work through the five exercises, get scored by Claude, and unlock the next one.',
-  },
-  teacher: {
-    title: 'Teacher',
-    blurb: "Review Claude's scores, override them where you disagree, and approve progression.",
-  },
-};
+const ROLES: Role[] = ['student', 'teacher'];
 
 export default function SignUp() {
   const { signUp, signInWithGoogle } = useSession();
+  const { t } = useLocale();
   const navigate = useNavigate();
   const [role, setRole] = useState<Role>('student');
   const [name, setName] = useState('');
@@ -71,28 +64,25 @@ export default function SignUp() {
   return (
     <AuthShell>
       <form onSubmit={handleSubmit} className="w-full max-w-sm">
-        <h2 className="text-xl font-semibold text-ink-900">Create an account</h2>
+        <h2 className="text-xl font-semibold text-ink-900">{t('auth.signUpTitle')}</h2>
         <p className="mt-1 text-sm text-ink-500">
-          Already have one?{' '}
+          {t('auth.alreadyHaveOne')}{' '}
           <Link to="/signin" className="font-medium text-indigo-600 hover:underline">
-            Sign in
+            {t('auth.signInLink')}
           </Link>
           .
         </p>
 
         {!isFirebaseConfigured && (
           <div className="mt-5">
-            <Alert tone="warning">
-              Firebase is not configured, so accounts cannot be created. Set the{' '}
-              <code className="font-mono text-xs">VITE_FIREBASE_*</code> variables — see the README.
-            </Alert>
+            <Alert tone="warning">{t('auth.notConfiguredSignUp')}</Alert>
           </div>
         )}
 
         <fieldset className="mt-6">
-          <legend className="label">I am a</legend>
+          <legend className="label">{t('auth.iAmA')}</legend>
           <div className="space-y-2">
-            {(Object.keys(ROLE_COPY) as Role[]).map((r) => (
+            {ROLES.map((r) => (
               <label
                 key={r}
                 className={`flex cursor-pointer items-start gap-3 rounded-lg border p-3 transition-colors ${
@@ -110,9 +100,9 @@ export default function SignUp() {
                   className="mt-0.5 h-4 w-4 accent-indigo-600"
                 />
                 <span>
-                  <span className="block text-sm font-medium text-ink-900">{ROLE_COPY[r].title}</span>
+                  <span className="block text-sm font-medium text-ink-900">{t(`role.${r}`)}</span>
                   <span className="block text-xs leading-relaxed text-ink-500">
-                    {ROLE_COPY[r].blurb}
+                    {t(r === 'student' ? 'auth.roleStudentBlurb' : 'auth.roleTeacherBlurb')}
                   </span>
                 </span>
               </label>
@@ -124,7 +114,7 @@ export default function SignUp() {
         {role === 'teacher' && (
           <div className="mt-4">
             <label htmlFor="teacherCode" className="label">
-              Teacher signing code
+              {t('auth.teacherCodeLabel')}
             </label>
             <input
               id="teacherCode"
@@ -136,11 +126,7 @@ export default function SignUp() {
               autoComplete="off"
               required
             />
-            <p className="hint mt-1.5">
-              Checked on the server against the{' '}
-              <code className="font-mono">TEACHER_SIGNUP_CODE</code> secret. It is never sent to the
-              browser, so it cannot be read out of the page.
-            </p>
+            <p className="hint mt-1.5">{t('auth.teacherCodeHint')}</p>
           </div>
         )}
 
@@ -149,32 +135,36 @@ export default function SignUp() {
             onClick={handleGoogle}
             busy={googleBusy}
             disabled={busy || needsCode || !isFirebaseConfigured}
-            label={`Continue with Google as ${ROLE_COPY[role].title.toLowerCase()}`}
+            label={t('auth.googleAsRole', { role: t(`role.${role}`).toLowerCase() })}
           />
-          {needsCode && <p className="hint mt-1.5">Enter the signing code to continue as a teacher.</p>}
+          {needsCode && <p className="hint mt-1.5">{t('auth.needsCode')}</p>}
         </div>
 
-        <AuthDivider>or sign up with email</AuthDivider>
+        <AuthDivider>{t('auth.orSignUpEmail')}</AuthDivider>
 
         <div>
           <label htmlFor="name" className="label">
-            Your name
+            {t('auth.nameLabel')}
           </label>
           <input
             id="name"
             className="input"
             value={name}
             onChange={(e) => setName(e.target.value)}
-            placeholder={role === 'student' ? 'Jordan Mills' : 'Ms. Alvarez'}
+            placeholder={
+              role === 'student'
+                ? t('auth.namePlaceholderStudent')
+                : t('auth.namePlaceholderTeacher')
+            }
             autoComplete="name"
             required
           />
-          <p className="hint mt-1.5">This is the name your teacher sees on your submissions.</p>
+          <p className="hint mt-1.5">{t('auth.nameHint')}</p>
         </div>
 
         <div className="mt-4">
           <label htmlFor="email" className="label">
-            Email
+            {t('auth.emailLabel')}
           </label>
           <input
             id="email"
@@ -182,7 +172,7 @@ export default function SignUp() {
             className="input"
             value={email}
             onChange={(e) => setEmail(e.target.value)}
-            placeholder="jordan@school.edu"
+            placeholder={t('auth.emailPlaceholder')}
             autoComplete="email"
             required
           />
@@ -190,7 +180,7 @@ export default function SignUp() {
 
         <div className="mt-4">
           <label htmlFor="password" className="label">
-            Password
+            {t('auth.passwordLabel')}
           </label>
           <input
             id="password"
@@ -198,7 +188,7 @@ export default function SignUp() {
             className="input"
             value={password}
             onChange={(e) => setPassword(e.target.value)}
-            placeholder="At least 6 characters"
+            placeholder={t('auth.passwordPlaceholder')}
             autoComplete="new-password"
             minLength={6}
             required
@@ -217,7 +207,7 @@ export default function SignUp() {
           disabled={busy || googleBusy || !isFirebaseConfigured}
         >
           {busy && <Spinner />}
-          Create {ROLE_COPY[role].title.toLowerCase()} account
+          {t('auth.createRoleAccount', { role: t(`role.${role}`).toLowerCase() })}
         </button>
       </form>
     </AuthShell>

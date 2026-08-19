@@ -1,11 +1,13 @@
 import { useMemo, useState } from 'react';
 import { Link } from 'react-router-dom';
 import { useSession } from '../context/SessionContext';
+import { useLocale } from '../context/LocaleContext';
 import { useExercises, useSubmissions } from '../hooks/useData';
-import { RUBRIC_BY_KEY } from '../data/rubric';
+import { RUBRIC_KEYS } from '../data/rubric';
+import { achievementsFor, earnedCount } from '../lib/achievements';
 import { formatDuration, studentAnalytics } from '../lib/analytics';
 import { BarChart, Dumbbell, TrendLine } from '../components/charts';
-import { EmptyState, Panel } from '../components/ui';
+import { AchievementGrid, EmptyState, Panel } from '../components/ui';
 
 /**
  * The student's own analytics. Everything here is derived on read from their
@@ -17,6 +19,7 @@ import { EmptyState, Panel } from '../components/ui';
  */
 export default function StudentProgress() {
   const { session } = useSession();
+  const { t, tn } = useLocale();
   const { submissions, loading } = useSubmissions();
   const { exercises, loading: exercisesLoading } = useExercises();
   const [showTable, setShowTable] = useState(false);
@@ -26,6 +29,11 @@ export default function StudentProgress() {
       session
         ? studentAnalytics(session.id, session.name, submissions, exercises)
         : null,
+    [session, submissions, exercises],
+  );
+
+  const achievements = useMemo(
+    () => (session ? achievementsFor(session.id, submissions, exercises) : []),
     [session, submissions, exercises],
   );
 
@@ -40,10 +48,10 @@ export default function StudentProgress() {
     return (
       <div className="space-y-6">
         <Header />
-        <EmptyState title="Nothing to chart yet">
-          Submit your first exercise and your progress will show up here.{' '}
+        <EmptyState title={t('progress.empty')}>
+          {t('progress.emptyHint')}{' '}
           <Link to="/" className="text-indigo-600 hover:underline">
-            Back to your exercises
+            {t('progress.backToExercises')}
           </Link>
           .
         </EmptyState>
@@ -60,11 +68,14 @@ export default function StudentProgress() {
       <Header />
 
       <div className="grid gap-4 sm:grid-cols-4">
-        <Stat label="Approved" value={`${data.approvedCount}/${data.exercises.length}`} />
-        <Stat label="Average score" value={data.averageScore || '—'} />
-        <Stat label="Attempts" value={data.totalAttempts} />
         <Stat
-          label="Typical turnaround"
+          label={t('progress.approved')}
+          value={`${data.approvedCount}/${data.exercises.length}`}
+        />
+        <Stat label={t('progress.averageScore')} value={data.averageScore || '—'} />
+        <Stat label={t('progress.attempts')} value={data.totalAttempts} />
+        <Stat
+          label={t('progress.turnaround')}
           value={formatDuration(data.medianTimeToApproval)}
           small
         />
@@ -73,14 +84,14 @@ export default function StudentProgress() {
       <div className="grid gap-6 lg:grid-cols-[1fr_20rem]">
         <div className="min-w-0 space-y-6">
           <Panel
-            title="Score across the track"
-            subtitle="Your best score on each exercise you have attempted, in order."
+            title={t('progress.scoreAcrossTrack')}
+            subtitle={t('progress.scoreAcrossTrackSubtitle')}
             action={
               <button
                 onClick={() => setShowTable((v) => !v)}
                 className="btn-secondary px-3 py-1.5 text-xs"
               >
-                {showTable ? 'Show chart' : 'Show table'}
+                {showTable ? t('common.showChart') : t('common.showTable')}
               </button>
             }
           >
@@ -88,10 +99,12 @@ export default function StudentProgress() {
               <table className="w-full text-sm">
                 <thead>
                   <tr className="border-b border-ink-200 text-left">
-                    <th className="py-2 pr-4 font-medium text-ink-500">Exercise</th>
-                    <th className="py-2 pr-4 font-medium text-ink-500">Best</th>
-                    <th className="py-2 pr-4 font-medium text-ink-500">Attempts</th>
-                    <th className="py-2 font-medium text-ink-500">Time to approval</th>
+                    <th className="py-2 pr-4 font-medium text-ink-500">{t('common.exercise')}</th>
+                    <th className="py-2 pr-4 font-medium text-ink-500">{t('progress.best')}</th>
+                    <th className="py-2 pr-4 font-medium text-ink-500">{t('common.attempts')}</th>
+                    <th className="py-2 font-medium text-ink-500">
+                      {t('progress.timeToApproval')}
+                    </th>
                   </tr>
                 </thead>
                 <tbody>
@@ -120,13 +133,10 @@ export default function StudentProgress() {
             )}
           </Panel>
 
-          <Panel
-            title="Learning velocity"
-            subtitle="Where each exercise started and where it was approved."
-          >
+          <Panel title={t('progress.velocity')} subtitle={t('progress.velocitySubtitle')}>
             {velocityPairs.length === 0 ? (
-              <EmptyState title="No approved exercises yet">
-                This fills in once a teacher approves your first submission.
+              <EmptyState title={t('progress.velocityEmpty')}>
+                {t('progress.velocityEmptyHint')}
               </EmptyState>
             ) : (
               <div className="space-y-5">
@@ -134,87 +144,75 @@ export default function StudentProgress() {
                 {data.velocity && (
                   <div className="rounded-lg border border-ink-200 px-4 py-3">
                     <p className="text-sm leading-relaxed text-ink-700">
-                      Across {data.velocity.sample} approved exercise
-                      {data.velocity.sample === 1 ? '' : 's'} you moved from an average of{' '}
-                      <strong className="tabular-nums">{data.velocity.firstMean}</strong> on the
-                      first attempt to{' '}
-                      <strong className="tabular-nums">{data.velocity.approvedMean}</strong> when
-                      approved
-                      {data.velocity.gain > 0 ? (
-                        <>
-                          {' '}
-                          — a gain of{' '}
-                          <strong className="tabular-nums">{data.velocity.gain}</strong> points
-                        </>
-                      ) : (
-                        ''
-                      )}
+                      {tn('progress.velocityLine', data.velocity.sample, {
+                        first: data.velocity.firstMean,
+                        approved: data.velocity.approvedMean,
+                      })}
+                      {data.velocity.gain > 0 && t('progress.velocityGain', { n: data.velocity.gain })}
                       .
                     </p>
-                    {data.velocity.perAttempt !== null && (
-                      <p className="hint mt-1.5">
-                        That works out at {data.velocity.perAttempt} points per revision.
-                      </p>
-                    )}
-                    {data.velocity.perAttempt === null && (
-                      <p className="hint mt-1.5">
-                        Every exercise was approved first time, so there is no revision rate to
-                        report.
-                      </p>
-                    )}
+                    <p className="hint mt-1.5">
+                      {data.velocity.perAttempt !== null
+                        ? t('progress.velocityPerAttempt', { n: data.velocity.perAttempt })
+                        : t('progress.velocityNoRevisions')}
+                    </p>
                   </div>
                 )}
               </div>
             )}
           </Panel>
 
-          <Panel
-            title="Effort per exercise"
-            subtitle="Attempts made, and how long each exercise took end to end."
-          >
+          <Panel title={t('progress.effort')} subtitle={t('progress.effortSubtitle')}>
             <BarChart
               data={attempted.map((e) => ({
                 label: e.title,
                 value: e.attempts,
-                display: `${e.attempts} ${e.attempts === 1 ? 'attempt' : 'attempts'}`,
+                display: tn('progress.attemptCount', e.attempts),
               }))}
               max={Math.max(...attempted.map((e) => e.attempts))}
             />
-            <p className="hint mt-3">
-              More attempts is not worse. Revisions are where most of the learning shows up — the
-              velocity chart above is the one to read for that.
-            </p>
+            <p className="hint mt-3">{t('progress.effortHint')}</p>
           </Panel>
         </div>
 
         <aside className="space-y-6">
-          <Panel title="Rubric dimensions" subtitle="Your average on each, across every attempt.">
+          <Panel
+            title={t('achievements.title')}
+            subtitle={t('achievements.subtitle', {
+              earned: earnedCount(achievements),
+              total: achievements.length,
+            })}
+          >
+            <AchievementGrid achievements={achievements} columns={1} />
+          </Panel>
+
+          <Panel title={t('progress.dimensions')} subtitle={t('progress.dimensionsSubtitle')}>
             <BarChart
-              data={Object.entries(data.dimensionMeans).map(([key, value]) => ({
-                label: RUBRIC_BY_KEY[key as keyof typeof RUBRIC_BY_KEY].label,
-                value: Math.round(value),
+              data={RUBRIC_KEYS.map((key) => ({
+                label: t(`rubric.${key}.label`),
+                value: Math.round(data.dimensionMeans[key]),
                 tone: 'score' as const,
               }))}
               labelWidth="w-32"
             />
             {data.strongest && data.weakest && data.strongest !== data.weakest && (
               <p className="mt-4 text-sm leading-relaxed text-ink-600">
-                Strongest on <strong>{RUBRIC_BY_KEY[data.strongest].label}</strong>, weakest on{' '}
-                <strong>{RUBRIC_BY_KEY[data.weakest].label}</strong>.{' '}
-                {RUBRIC_BY_KEY[data.weakest].description}
+                {t('progress.strongestWeakest', {
+                  strongest: t(`rubric.${data.strongest}.label`),
+                  weakest: t(`rubric.${data.weakest}.label`),
+                })}{' '}
+                {t(`rubric.${data.weakest}.description`)}
               </p>
             )}
           </Panel>
 
-          <Panel title="Report" subtitle="A printable summary to share.">
-            <p className="text-sm leading-relaxed text-ink-600">
-              Generates a one-page summary of your progress that can be saved as a PDF.
-            </p>
+          <Panel title={t('progress.report')} subtitle={t('progress.reportSubtitle')}>
+            <p className="text-sm leading-relaxed text-ink-600">{t('progress.reportBody')}</p>
             <Link
               to={`/report/${session?.id}`}
               className="btn-secondary mt-4 inline-flex w-full justify-center"
             >
-              Open report
+              {t('progress.openReport')}
             </Link>
           </Panel>
         </aside>
@@ -224,12 +222,11 @@ export default function StudentProgress() {
 }
 
 function Header() {
+  const { t } = useLocale();
   return (
     <div>
-      <h1 className="text-2xl font-semibold text-ink-900">Your progress</h1>
-      <p className="mt-1 text-sm text-ink-500">
-        How your scores have moved across the track, and where your time has gone.
-      </p>
+      <h1 className="text-2xl font-semibold text-ink-900">{t('progress.title')}</h1>
+      <p className="mt-1 text-sm text-ink-500">{t('progress.subtitle')}</p>
     </div>
   );
 }

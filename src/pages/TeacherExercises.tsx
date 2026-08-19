@@ -192,8 +192,8 @@ export default function TeacherExercises() {
         <div>
           <h1 className="text-2xl font-semibold text-ink-900">Exercises</h1>
           <p className="mt-1 text-sm text-ink-500">
-            The five built-in exercises plus anything you add. Custom exercises appear on the
-            student board in the same locked progression.
+            The built-in exercises plus anything you add. Custom exercises appear on the student
+            board in the same locked progression.
           </p>
         </div>
         {!draft && (

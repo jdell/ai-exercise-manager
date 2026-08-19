@@ -5,11 +5,18 @@ Guidance for Claude Code when working in this repository.
 ## What this is
 
 A classroom app for teaching prompt engineering. Students work through a locked
-sequence of exercises — five built in, plus any a teacher authors; Claude
+sequence of exercises — nine built in, plus any a teacher authors; Claude
 auto-scores each submission against a fixed rubric, streaming the result as it
 is written; a teacher reviews every score and decides whether the student
 progresses. Every attempt is kept, so students can see how their work moved
 between revisions.
+
+The built-ins are five technique drills followed by four real-world challenges:
+applied briefs with a stated reader, a deadline, and a cost of getting it wrong.
+Alongside them sits an ungraded playground for trying prompts, and badges
+derived from approved work. The whole student-facing surface is available in
+English and Spanish, and Claude writes its feedback in whichever the student
+was working in.
 
 Two roles, backed by Firebase Authentication:
 
@@ -53,30 +60,36 @@ installs `functions/` so that typecheck works from a fresh clone.
 ```
 src/
 ├── data/
-│   ├── exercises.ts    ← the five BUILT-IN exercises + mergeExercises()
+│   ├── exercises.ts    ← the nine BUILT-IN exercises, mergeExercises(),
+│   │                     localizeExercise()
+│   ├── exercises.es.ts ← Spanish text for those, keyed by exercise id
+│   ├── playground-pairs.ts ← the A/B starter pairs for the playground
 │   ├── paths.ts        ← the three learning paths and difficulty styling
 │   └── rubric.ts       ← the four dimensions, weights, effectiveWeights(),
 │                         and weightedTotal()
 ├── lib/
 │   ├── evaluator-prompt.ts ← the grading prompt + schema. SHARED with functions/
-│   ├── claude.ts       ← thin client for the two callables. No SDK, no key
+│   ├── claude.ts       ← thin client for the three callables. No SDK, no key
 │   ├── partial-json.ts ← reads a half-written JSON document (streaming preview)
 │   ├── integrity.ts    ← anti-gaming heuristics. SHARED with functions/
 │   ├── calibration.ts  ← teacher-vs-Claude delta, derived from blind scores
 │   ├── analytics.ts    ← every analytics figure, derived from /submissions
+│   ├── achievements.ts ← badges, derived from /submissions
+│   ├── i18n.ts         ← the English and Spanish dictionaries + lookup
 │   ├── auth.ts         ← Firebase Auth + the createProfile call
 │   ├── firebase.ts     ← app/auth/db/functions handles + emulator wiring
 │   └── store.ts        ← database reads and writes, scoped by role
 ├── hooks/useData.ts    ← subscriptions, useExercises(), computeProgress()
 │                         (the locking rule), pathProgress()
 ├── context/SessionContext.tsx  ← credential + profile = session
+├── context/LocaleContext.tsx   ← the reader's language, t() and tn()
 ├── components/         ← Layout, AuthShell, shared UI primitives
 │   └── charts.tsx      ← inline-SVG chart primitives (no charting dependency)
 ├── pages/              ← one file per route
 └── types/index.ts      ← every shared domain type
 
 functions/
-├── src/index.ts        ← the three callables
+├── src/index.ts        ← the four callables
 ├── src/claude.ts       ← ALL Anthropic API calls live here
 └── src/guards.ts       ← auth/role checks, prior-attempt lookup
 
@@ -221,7 +234,7 @@ per-path unlocking changes the pedagogy, not just the code.
 
 ### 6a. The exercise list is dynamic — read `useExercises()`
 
-`EXERCISES` in `data/exercises.ts` holds only the five built-ins. Teachers
+`EXERCISES` in `data/exercises.ts` holds only the nine built-ins. Teachers
 author custom exercises that live under `/exercises` in the database, and
 `useExercises()` merges the two into one ordered list with a lookup map.
 Anything that renders, links to, or grades an exercise must read that hook;
@@ -239,6 +252,22 @@ returns them oldest-first, and `RevisionTimeline` renders the score
 progression. Do not "tidy" this into a latest-attempt-plus-history shape — the
 Growth dimension, the revision timeline, and the teacher's context all read the
 full series.
+
+### 6c. Real-world challenges carry a `scenario`, and the evaluator is told it
+
+Exercises 6–9 are applied briefs. Each has an `Exercise.scenario` — the seat the
+student is sitting in, the situation, who receives the output, and what going
+wrong costs — which the workspace renders above the brief and
+`buildEvaluatorSystemPrompt()` injects into the grading context.
+
+That injection is the whole point. These exercises are scored on fitness for a
+stated reader, so a grader that has not been told who the reader is will reward
+technique and miss the brief. They also weight Execution above the rubric
+default (via `rubricWeights`), because in an applied task the question is
+whether the artifact could be sent, not whether the prompt reads well.
+
+Do not add a scenario to the first five. They are deliberately context-free: the
+technique is supposed to be the only variable.
 
 ### 7. Progress is derived, never stored
 
@@ -282,7 +311,28 @@ page. What the print rules produce **is** the artifact — anything hidden there
 absent from the file a guardian receives.
 
 The report's audience is a parent or guardian, not the student. It carries no
-rubric internals, no evaluator mechanics, and no integrity signals.
+rubric internals, no evaluator mechanics, and no integrity signals. It does
+follow the reader's language — it is the one page that leaves the building, and
+an English PDF is no use to a guardian who reads Spanish.
+
+### 7c. Badges are derived too, and they only count approved work
+
+`src/lib/achievements.ts` computes every badge from `/submissions` on read. No
+`/achievements` node — a stored badge outlives the work that earned it, and a
+teacher who withdraws an approval would leave one behind.
+
+Two conventions:
+
+- **A badge is earned from work a teacher approved, or from a score a teacher
+  could have overridden.** Read the teacher's dimension score where one exists,
+  Claude's otherwise — the same rule as `analytics.ts`.
+- **Nothing measures speed, streaks, or volume.** The rubric rewards revision;
+  a badge for finishing fast would quietly argue with it. "Kept at it" exists
+  and is deliberately framed as effort rather than failure.
+
+The copy lives in the i18n dictionary under `achievement.<id>.*`, not in the
+module — badges read in the student's language. The module returns ids and the
+variables their sentences need.
 
 ### 8. The client never says what a prompt produced
 
@@ -299,6 +349,62 @@ is the one the function computed and wrote.
 This is what lets `database.rules.json` deny clients any write to `evaluation`
 or `output`. If you ever pass the output up from the client to save a round
 trip, you have handed students a text box for their own transcript and score.
+
+### 9. Language changes what a student reads, never how they are graded
+
+`src/lib/i18n.ts` holds both dictionaries. `EN` defines the key set and `ES` is
+typed `Record<MessageKey, string>`, so a missing or misspelled Spanish key fails
+`npm run lint` instead of leaking an English string into a Spanish page. Adding
+a key means adding both halves — that is the feature, not friction.
+
+Three boundaries hold this together:
+
+1. **Exercise text is localised; the graded exercise is not.**
+   `localizeExercise()` swaps the student-facing fields for display.
+   `buildEvaluatorSystemPrompt()` is always handed the canonical record, because
+   a translated brief is a subtly different brief and two students held to two
+   different standards is what a fixed rubric exists to prevent.
+2. **`testInput` is not translated.** The material *is* the problem — the
+   ambiguity in the transcript, the shorthand in the clinical notes — so
+   translating it would hand two students two different problems. Same reason
+   the material lives server-side.
+3. **Feedback language travels on the submission, not the session.**
+   `Submission.locale` records what the student was working in;
+   `evaluateSubmission` narrows it to `'en' | 'es'` and tells the evaluator to
+   write its prose in it. Scores, bands and weights are identical either way.
+   The reader's own UI language lives in `localStorage`, because a shared
+   classroom machine gets switched between students all day.
+
+Two things are deliberately still English: the teacher consoles (review queue,
+analytics, evaluator console, exercise builder — staff tools, and the shared
+components inside them do translate), and `RUBRIC`'s own `label`/`description`
+fields in `data/rubric.ts`, which are the canonical strings the model is given.
+The UI reads `rubric.<key>.label` from the dictionary instead. If you add a
+dimension, add its two keys in both languages as well.
+
+`relativeTime()` and `formatDuration()` read the active locale from module state
+rather than taking a translator, because they are called from chart data and
+table cells during render. That is the only mutable module state in the app and
+it exists for exactly those two functions — components must use `useLocale()`,
+or they will not re-render when the language changes.
+
+### 10. The playground is the one unbounded call, and it is quota'd
+
+`runPlayground` takes a prompt and material the caller wrote. Every other path
+is bounded by something the server chose — an exercise id resolves to material
+the caller cannot supply, a submission id resolves to a prompt already in the
+database — so this is the closest thing here to a general-purpose Claude proxy.
+
+It is worth it (a course about prompting where you cannot try a prompt is a
+worse course) and it is paid for with a per-user quota: 40 runs an hour, counted
+by a transaction at `/rateLimits/$uid/playground`. That node has **no rule** in
+`database.rules.json` and is therefore denied to every client by the root
+default; only admin credentials touch it. If you add another free-form call,
+claim from the same counter.
+
+Nothing about a playground run is stored: no submission, no output, nothing a
+teacher can read. An experiment that might be marked is not an experiment. The
+draft in the editor survives a reload via `localStorage` and goes no further.
 
 ## Authentication and authorisation
 
@@ -334,7 +440,9 @@ reason, and it recurses into nested objects because exercise records carry them
 (rubric weight overrides). Use it on any new write path.
 
 Database nodes: `/students`, `/submissions`, `/exercises` (custom exercises
-only — the built-in five are compiled in and must never be written there).
+only — the built-in nine are compiled in and must never be written there), and
+`/rateLimits` (playground quota counters, written only by the function; it has
+no rule at all, so the root default denies every client).
 
 ## Security posture
 
@@ -348,9 +456,14 @@ worth knowing:
    accounts it already created. Demote those by editing `role` in the console.
 2. **`runPrompt` is authenticated but not rate-limited.** Any signed-in user can
    spend tokens, bounded only by `maxInstances` and the 20k-character prompt
-   cap. A per-uid quota is the obvious next step if this runs outside a
-   classroom.
-3. **`/exercises` is read-only for authenticated users and unused.** The five
+   cap. It is survivable because the caller can only run one of the exercises;
+   a per-uid quota is still the obvious next step outside a classroom, and
+   `claimPlaygroundRun()` is the pattern to copy.
+3. **`runPlayground` takes arbitrary text, and is quota'd for it.** 40 runs per
+   user per rolling hour, 8k characters of prompt and 8k of material, enforced
+   server-side. It is the widest surface in the app; do not widen it further
+   without moving the counter with it. See rule 10.
+4. **`/exercises` is read-only for authenticated users and unused.** The built-in
    exercises ship in the bundle (`src/data/exercises.ts`); the node exists so
    that a mirrored copy could never be written by a client.
 
@@ -378,8 +491,11 @@ adding a variant.
 - Prefer deriving state in `useData.ts` over adding fields to stored records.
 - UI primitives live in `components/ui.tsx`. Reuse `Panel`, `Alert`, `ScoreRing`,
   `RubricBreakdown`, `StatusBadge`, `RevisionTimeline`, `LiveEvaluation`,
-  `PathChip`, `DifficultyBadge`, `CharCounter` rather than hand-rolling
-  equivalents.
+  `PathChip`, `DifficultyBadge`, `CharCounter`, `AchievementGrid`,
+  `LanguagePicker` rather than hand-rolling equivalents.
+- No user-visible string is written inline in a student-facing component. Add a
+  key to both dictionaries in `lib/i18n.ts` and read it through `useLocale()`.
+  Plurals go through `tn()` and its `.one` / `.other` variants.
 - `Exercise.maxPromptChars` is an advisory budget, surfaced by `CharCounter`.
   Going over does not block submission and the evaluator is never told about it
   — the point is to make the constraint felt while writing, not to fail a

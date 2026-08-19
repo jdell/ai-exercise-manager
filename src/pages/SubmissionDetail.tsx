@@ -1,7 +1,9 @@
 import { useMemo } from 'react';
 import { Link, Navigate, useParams } from 'react-router-dom';
 import { useSession } from '../context/SessionContext';
+import { useLocale } from '../context/LocaleContext';
 import { attemptsFor, useExercises, useSubmissions } from '../hooks/useData';
+import { localizeExercise } from '../data/exercises';
 import { PASSING_SCORE, effectiveWeights } from '../data/rubric';
 import {
   Alert,
@@ -22,6 +24,7 @@ import { FeedbackList } from './ExerciseWorkspace';
 export default function SubmissionDetail() {
   const { submissionId } = useParams<{ submissionId: string }>();
   const { session } = useSession();
+  const { t, locale } = useLocale();
   const { submissions, loading } = useSubmissions();
   const { byId, loading: exercisesLoading } = useExercises();
 
@@ -42,7 +45,8 @@ export default function SubmissionDetail() {
     return <Navigate to="/history" replace />;
   }
 
-  const exercise = byId[submission.exerciseId];
+  const canonical = byId[submission.exerciseId];
+  const exercise = canonical ? localizeExercise(canonical, locale) : undefined;
   const weights = submission.evaluation?.weights ?? effectiveWeights(exercise?.rubricWeights);
   const index = attempts.findIndex((a) => a.id === submission.id);
   const previous = index > 0 ? attempts[index - 1] : undefined;
@@ -52,7 +56,7 @@ export default function SubmissionDetail() {
     <div className="space-y-6">
       <div>
         <Link to="/history" className="text-sm text-ink-500 hover:text-ink-800">
-          ← History
+          {t('detail.backToHistory')}
         </Link>
         <div className="mt-2 flex flex-wrap items-center gap-3">
           <h1 className="text-2xl font-semibold text-ink-900">
@@ -61,14 +65,18 @@ export default function SubmissionDetail() {
           <StatusBadge status={submission.status} />
         </div>
         <p className="mt-1 text-sm text-ink-500">
-          Attempt {submission.attempt} of {attempts.length} · {relativeTime(submission.createdAt)}
+          {t('detail.attemptOf', {
+            n: submission.attempt,
+            total: attempts.length,
+            when: relativeTime(submission.createdAt),
+          })}
         </p>
       </div>
 
       {attempts.length > 1 && (
         <Panel
-          title="Revision history"
-          subtitle="Every attempt you have made at this exercise, and how the score moved."
+          title={t('detail.revisionHistory')}
+          subtitle={t('detail.revisionHistorySubtitle')}
         >
           <RevisionTimeline
             attempts={attempts}
@@ -84,30 +92,33 @@ export default function SubmissionDetail() {
         <div className="min-w-0 space-y-6">
           {previous && (
             <Panel
-              title={`What attempt ${previous.attempt} was asked to fix`}
-              subtitle="Claude's advice on your previous attempt, next to what you submitted this time."
+              title={t('detail.whatWasAskedToFix', { n: previous.attempt })}
+              subtitle={t('detail.whatWasAskedSubtitle')}
             >
               <div className="space-y-4">
                 <FeedbackList
-                  title={`Flagged on attempt ${previous.attempt}`}
+                  title={t('detail.flaggedOn', { n: previous.attempt })}
                   items={previous.evaluation?.improvements ?? []}
                   tone="amber"
                 />
                 {previous.review?.comment && (
                   <div className="rounded-lg border border-indigo-200 bg-indigo-50/60 p-3.5">
                     <p className="mb-1 text-xs font-semibold tracking-wide text-indigo-800 uppercase">
-                      Your teacher asked for
+                      {t('detail.teacherAskedFor')}
                     </p>
                     <p className="text-sm leading-relaxed text-ink-800">{previous.review.comment}</p>
                   </div>
                 )}
                 <div className="grid gap-3 border-t border-ink-200 pt-4 sm:grid-cols-2">
                   <PromptColumn
-                    label={`Attempt ${previous.attempt}`}
+                    label={t('common.attemptN', { n: previous.attempt })}
                     text={previous.prompt}
                     muted
                   />
-                  <PromptColumn label={`Attempt ${submission.attempt}`} text={submission.prompt} />
+                  <PromptColumn
+                    label={t('common.attemptN', { n: submission.attempt })}
+                    text={submission.prompt}
+                  />
                 </div>
               </div>
             </Panel>
@@ -115,7 +126,7 @@ export default function SubmissionDetail() {
 
           {submission.evaluation && (
             <Panel
-              title="Claude's feedback"
+              title={t('detail.claudeFeedback')}
               subtitle={`${submission.evaluation.model} · ${relativeTime(submission.evaluation.evaluatedAt)}`}
             >
               <div className="space-y-4">
@@ -130,12 +141,12 @@ export default function SubmissionDetail() {
                 />
                 <div className="grid gap-4 sm:grid-cols-2">
                   <FeedbackList
-                    title="Strengths"
+                    title={t('common.strengths')}
                     items={submission.evaluation.strengths}
                     tone="emerald"
                   />
                   <FeedbackList
-                    title="Next time"
+                    title={t('common.nextTime')}
                     items={submission.evaluation.improvements}
                     tone="amber"
                   />
@@ -145,7 +156,7 @@ export default function SubmissionDetail() {
           )}
 
           {submission.review?.comment && (
-            <Panel title="Teacher comment">
+            <Panel title={t('common.teacherComment')}>
               <p className="text-sm leading-relaxed whitespace-pre-wrap text-ink-800">
                 {submission.review.comment}
               </p>
@@ -156,61 +167,63 @@ export default function SubmissionDetail() {
           )}
 
           {!previous && (
-            <Panel title="The prompt you submitted">
+            <Panel title={t('detail.promptYouSubmitted')}>
               <pre className="prose-output scroll-slim max-h-96 overflow-auto rounded-lg bg-ink-50 p-4 font-mono text-ink-800">
                 {submission.prompt}
               </pre>
             </Panel>
           )}
 
-          <Panel title="What it produced">
+          <Panel title={t('detail.whatItProduced')}>
             <pre className="prose-output scroll-slim max-h-96 overflow-auto rounded-lg bg-ink-50 p-4 text-ink-800">
-              {submission.output || '(no output captured)'}
+              {submission.output || t('detail.noOutputCaptured')}
             </pre>
           </Panel>
 
-          <Panel title="Your reflection">
+          <Panel title={t('detail.yourReflection')}>
             <p className="text-sm leading-relaxed whitespace-pre-wrap text-ink-800">
-              {submission.reflection || '(left blank)'}
+              {submission.reflection || t('detail.leftBlank')}
             </p>
           </Panel>
         </div>
 
         <aside className="space-y-6">
-          <Panel title="Score">
+          <Panel title={t('common.score')}>
             {score !== undefined ? (
               <>
                 <div className="mb-4 flex items-center gap-4">
                   <ScoreRing score={score} />
                   <div className="text-sm">
                     <p className="font-medium text-ink-900">
-                      {score >= PASSING_SCORE ? 'Clears the bar' : 'Below the bar'}
+                      {score >= PASSING_SCORE ? t('common.clearsBar') : t('common.belowBar')}
                     </p>
                     <p className="mt-0.5 text-xs text-ink-500">
-                      {submission.review ? 'Teacher-reviewed' : 'Claude score, pending review'}
+                      {submission.review ? t('common.teacherReviewed') : t('common.pendingReview')}
                     </p>
                   </div>
                 </div>
                 {submission.review && submission.evaluation && (
                   <p className="hint">
-                    Claude scored {submission.evaluation.weightedTotal}; your teacher recorded{' '}
-                    {submission.review.finalScore}.
+                    {t('detail.claudeVsTeacher', {
+                      claude: submission.evaluation.weightedTotal,
+                      teacher: submission.review.finalScore,
+                    })}
                   </p>
                 )}
               </>
             ) : (
-              <p className="text-sm text-ink-500">This attempt was never scored.</p>
+              <p className="text-sm text-ink-500">{t('detail.neverScored')}</p>
             )}
           </Panel>
 
           {exercise && (
-            <Panel title="The exercise">
+            <Panel title={t('detail.theExercise')}>
               <p className="text-sm leading-relaxed text-ink-700">{exercise.task}</p>
               <Link
                 to={`/exercise/${exercise.id}`}
                 className="mt-3 block text-xs font-medium text-indigo-600 hover:underline"
               >
-                Open the workspace →
+                {t('detail.openWorkspace')}
               </Link>
             </Panel>
           )}

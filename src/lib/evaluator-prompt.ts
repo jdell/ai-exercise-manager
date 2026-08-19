@@ -1,4 +1,4 @@
-import type { Exercise, RubricKey, Submission } from '../types';
+import type { Exercise, Locale, RubricKey, Submission } from '../types';
 import { PASSING_SCORE, RUBRIC, RUBRIC_KEYS, effectiveWeights } from '../data/rubric';
 
 /**
@@ -136,7 +136,21 @@ export interface RawEvaluation {
   gaming?: { suspected: boolean; note: string };
 }
 
-export function buildEvaluatorSystemPrompt(exercise: Exercise): string {
+/**
+ * What the evaluator is told to write feedback in.
+ *
+ * Declared here rather than imported from `lib/i18n.ts` because this module is
+ * compiled into the Cloud Function, whose tsconfig has no DOM lib — and the
+ * i18n module reaches for `window` to detect the browser's language. This is
+ * the evaluator's own instruction anyway; the UI dictionary is a different
+ * concern that happens to share a subject.
+ */
+const FEEDBACK_LANGUAGE: Record<Locale, string> = {
+  en: 'English',
+  es: 'Spanish (español)',
+};
+
+export function buildEvaluatorSystemPrompt(exercise: Exercise, locale: Locale = 'en'): string {
   // Weights come from the exercise, not the rubric defaults — a teacher can
   // reweight a custom exercise, and the evaluator must be told the same
   // weights the app will score with.
@@ -156,6 +170,36 @@ export function buildEvaluatorSystemPrompt(exercise: Exercise): string {
     ? `\n\nWorked examples for calibration. These set the bar; do not quote them back to the student as if they wrote them.\n\n${examples.join('\n\n')}`
     : '';
 
+  // Real-world challenges are graded on fitness for a stated reader, so the
+  // reader has to be in the grader's context. Without it a prompt that is
+  // technically excellent and useless to the person receiving the output looks
+  // like a high score.
+  const scenarioSection = exercise.scenario
+    ? `
+
+## The situation this prompt has to work in
+
+The student is writing as: ${exercise.scenario.role}
+The situation: ${exercise.scenario.context}
+The output goes to: ${exercise.scenario.stakeholder}
+What going wrong costs: ${exercise.scenario.atStake}
+
+This is an applied brief, so judge the prompt on whether it would survive contact with that reader. A prompt that demonstrates technique but produces something the stated recipient could not act on has not met the brief. Equally, do not reward domain vocabulary the student cannot have checked — the skill being assessed is prompt design under real constraints, not expertise in this field.`
+    : '';
+
+  // Feedback is written in the language the student was working in; the rubric,
+  // the bands, and the scores are identical either way. Only the prose moves.
+  const languageSection =
+    locale === 'en'
+      ? ''
+      : `
+
+## Language
+
+Write every piece of prose you return — summary, strengths, improvements, and each rationale — in ${FEEDBACK_LANGUAGE[locale]}. The student wrote in it and reads in it.
+
+This changes nothing about how you score. Keep rubric dimension names, technique names, and anything you quote from the student's own work as they are; a quotation translated is no longer evidence.`;
+
   return `You are the Claude Evaluator for a prompt-engineering course. You grade one student submission at a time against a fixed rubric and return structured scores.
 
 Your grading is a first pass. A human teacher reviews every score you produce and may override any of them, so be accurate rather than diplomatic. Inflated scores waste the teacher's time; harsh scores discourage students who did the work. Score what is in front of you.
@@ -174,7 +218,7 @@ Success criteria for this exercise:
 ${exercise.successCriteria.map((c) => `- ${c}`).join('\n')}
 
 Exercise-specific grading guidance (this overrides the general rubric where they conflict):
-${exercise.evaluatorNotes || 'None supplied. Grade against the success criteria above and the general rubric.'}${examplesSection}
+${exercise.evaluatorNotes || 'None supplied. Grade against the success criteria above and the general rubric.'}${examplesSection}${scenarioSection}${languageSection}
 
 ## The rubric
 

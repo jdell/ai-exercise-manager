@@ -85,6 +85,38 @@ export async function runStudentPrompt(
 }
 
 // ---------------------------------------------------------------------------
+// 1b. Run a playground experiment
+// ---------------------------------------------------------------------------
+
+/**
+ * Runs a free-form prompt against material the student pasted in, streamed.
+ *
+ * Unlike `runStudentPrompt` this sends the material as well as the prompt —
+ * there is no exercise to look it up from. The function it calls is quota'd per
+ * user for exactly that reason, and a run leaves no record anywhere.
+ */
+export async function runPlaygroundPrompt(
+  prompt: string,
+  material: string,
+  onDelta?: (chunk: string) => void,
+  signal?: AbortSignal,
+): Promise<RunResult> {
+  const callable = httpsCallable<
+    { prompt: string; material: string },
+    RunResult,
+    { text: string }
+  >(fns(), 'runPlayground', { timeout: RUN_TIMEOUT_MS });
+
+  const { stream, data } = await callable.stream({ prompt, material }, { signal });
+
+  for await (const chunk of stream) {
+    if (chunk?.text) onDelta?.(chunk.text);
+  }
+
+  return await data;
+}
+
+// ---------------------------------------------------------------------------
 // 2. Grade a submission
 // ---------------------------------------------------------------------------
 
@@ -151,6 +183,10 @@ export function describeError(err: unknown): string {
         return 'Your session expired. Sign in again to continue.';
       case 'functions/permission-denied':
         return err.message || 'You do not have access to that.';
+      case 'functions/resource-exhausted':
+        // The playground quota. The function phrases this one for a student,
+        // including which paths are unaffected, so pass it through.
+        return err.message || 'You have run out of runs for now. Try again shortly.';
       case 'functions/deadline-exceeded':
         return 'Claude took too long to respond. Try again.';
       case 'functions/unavailable':

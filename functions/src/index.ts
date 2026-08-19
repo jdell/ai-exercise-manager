@@ -9,6 +9,7 @@ import {
   SECOND_OPINION_MODEL,
   describeClaudeError,
   evaluateSubmission as gradeSubmission,
+  runPlaygroundPrompt,
   runStudentPrompt,
   secondOpinion,
 } from './claude';
@@ -28,6 +29,8 @@ import {
  *   createProfile      — provisions /users/$uid after Firebase Auth sign-up,
  *                        and is the only place the teacher role is granted.
  *   runPrompt          — executes a student's prompt, streamed back to them.
+ *   runPlayground      — executes a free-form prompt for the playground, under
+ *                        a per-user quota. The only unbounded call here.
  *   evaluateSubmission — runs the prompt, grades it, and writes both the output
  *                        and the score straight into the database.
  *
@@ -135,7 +138,8 @@ export const createProfile = onCall({ secrets: [TEACHER_SIGNUP_CODE] }, async (r
 /**
  * Runs a prompt and streams the text back. The exercise's fixed test material
  * is attached server-side, so this is not a general-purpose Claude proxy: a
- * caller can only run a prompt against one of the five exercises.
+ * caller can only run a prompt against an exercise that exists. Free-form runs
+ * go through `runPlayground`, which is quota'd for that reason.
  */
 export const runPrompt = onCall(
   { secrets: [ANTHROPIC_API_KEY], timeoutSeconds: 300 },
@@ -159,6 +163,103 @@ export const runPrompt = onCall(
       return result;
     } catch (err) {
       logger.warn('runPrompt failed', { exerciseId, error: String(err) });
+      throw claudeFailure(err);
+    }
+  },
+);
+
+// ---------------------------------------------------------------------------
+// runPlayground — free-form experimentation, under a quota
+// ---------------------------------------------------------------------------
+
+const MAX_PLAYGROUND_PROMPT_CHARS = 8000;
+const MAX_PLAYGROUND_MATERIAL_CHARS = 8000;
+
+/** Runs per user per rolling hour. Generous for a lesson, useless for mining. */
+const PLAYGROUND_QUOTA = 40;
+const PLAYGROUND_WINDOW_MS = 60 * 60 * 1000;
+
+/**
+ * Claims one playground run for `uid`, or refuses.
+ *
+ * `runPrompt` is authenticated but not rate-limited, and that has been an
+ * acknowledged gap since Phase 2 — it is survivable there because the caller
+ * can only run one of the exercises. The playground takes arbitrary text, so
+ * shipping it without a quota would turn a classroom app into an open Claude
+ * proxy for anyone who can create an account.
+ *
+ * The counter lives at /rateLimits/$uid, which has no rule in
+ * database.rules.json and is therefore denied to every client by the root
+ * default. Only these functions, holding admin credentials, can read or move
+ * it. A transaction rather than a read-then-write because two browser tabs
+ * hitting Run together is the normal case, not the exotic one.
+ */
+async function claimPlaygroundRun(uid: string): Promise<void> {
+  const now = Date.now();
+  const result = await db()
+    .ref(`rateLimits/${uid}/playground`)
+    .transaction((current: { windowStart: number; count: number } | null) => {
+      if (!current || now - current.windowStart >= PLAYGROUND_WINDOW_MS) {
+        return { windowStart: now, count: 1 };
+      }
+      // Returning undefined aborts the transaction without writing, which is
+      // how the refusal below is signalled.
+      if (current.count >= PLAYGROUND_QUOTA) return;
+      return { windowStart: current.windowStart, count: current.count + 1 };
+    });
+
+  if (!result.committed) {
+    throw new HttpsError(
+      'resource-exhausted',
+      'You have used your playground runs for the hour. Exercise test runs are unaffected.',
+    );
+  }
+}
+
+/**
+ * Runs a prompt the caller wrote against material the caller supplied, and
+ * streams the text back.
+ *
+ * Nothing here touches the database beyond the quota counter: a playground run
+ * is not a submission, is never graded, and leaves no record for a teacher to
+ * see. That is deliberate — an experiment that might be marked is not an
+ * experiment.
+ */
+export const runPlayground = onCall(
+  { secrets: [ANTHROPIC_API_KEY], timeoutSeconds: 120 },
+  async (request, response?: CallableResponse<{ text: string }>) => {
+    const uid = requireUid(request);
+
+    const prompt = requireString(request.data?.prompt, 'A prompt', MAX_PLAYGROUND_PROMPT_CHARS);
+    const rawMaterial = request.data?.material;
+    if (typeof rawMaterial === 'string' && rawMaterial.length > MAX_PLAYGROUND_MATERIAL_CHARS) {
+      throw new HttpsError(
+        'invalid-argument',
+        `The material is longer than ${MAX_PLAYGROUND_MATERIAL_CHARS} characters.`,
+      );
+    }
+    const material = typeof rawMaterial === 'string' ? rawMaterial : '';
+
+    await claimPlaygroundRun(uid);
+
+    // sendChunk is async; chain the sends so deltas arrive in order and the
+    // handler can wait for the last one before returning.
+    let sending: Promise<unknown> = Promise.resolve();
+    const onDelta = (text: string) => {
+      sending = sending.then(() => response?.sendChunk({ text }));
+    };
+
+    try {
+      const result = await runPlaygroundPrompt(
+        ANTHROPIC_API_KEY.value(),
+        prompt,
+        material,
+        onDelta,
+      );
+      await sending;
+      return result;
+    } catch (err) {
+      logger.warn('runPlayground failed', { error: String(err) });
       throw claudeFailure(err);
     }
   },

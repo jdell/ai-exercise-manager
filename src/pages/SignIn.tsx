@@ -1,6 +1,7 @@
 import { useState } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
 import { useSession } from '../context/SessionContext';
+import { useLocale } from '../context/LocaleContext';
 import { describeAuthError, isCancelledPopup } from '../lib/auth';
 import { isFirebaseConfigured } from '../lib/firebase';
 import AuthShell from '../components/AuthShell';
@@ -9,6 +10,7 @@ import { Alert, Spinner } from '../components/ui';
 
 export default function SignIn() {
   const { signIn, signInWithGoogle, authError } = useSession();
+  const { t } = useLocale();
   const navigate = useNavigate();
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
@@ -52,40 +54,42 @@ export default function SignIn() {
   return (
     <AuthShell>
       <form onSubmit={handleSubmit} className="w-full max-w-sm">
-        <h2 className="text-xl font-semibold text-ink-900">Sign in</h2>
+        <h2 className="text-xl font-semibold text-ink-900">{t('auth.signInTitle')}</h2>
         <p className="mt-1 text-sm text-ink-500">
-          New here?{' '}
+          {t('auth.newHere')}{' '}
           <Link to="/signup" className="font-medium text-indigo-600 hover:underline">
-            Create an account
+            {t('auth.createAccountLink')}
           </Link>
           .
         </p>
 
         {!isFirebaseConfigured && (
           <div className="mt-5">
-            <Alert tone="warning">
-              Firebase is not configured, so there is nothing to sign in to. Set the{' '}
-              <code className="font-mono text-xs">VITE_FIREBASE_*</code> variables — see the README.
-            </Alert>
+            <Alert tone="warning">{t('auth.notConfiguredSignIn')}</Alert>
           </div>
         )}
 
         <div className="mt-6">
-          <GoogleButton onClick={handleGoogle} busy={googleBusy} disabled={busy || !isFirebaseConfigured} />
+          <GoogleButton
+            onClick={handleGoogle}
+            busy={googleBusy}
+            disabled={busy || !isFirebaseConfigured}
+            label={t('auth.signInWithGoogle')}
+          />
           <p className="hint mt-1.5">
-            First time here? Google sign-in creates a student account. Teachers should use{' '}
+            {t('auth.googleStudentHint')}{' '}
             <Link to="/signup" className="font-medium text-indigo-600 hover:underline">
-              Create an account
+              {t('auth.createAccountLink')}
             </Link>
             .
           </p>
         </div>
 
-        <AuthDivider />
+        <AuthDivider>{t('auth.or')}</AuthDivider>
 
         <div>
           <label htmlFor="email" className="label">
-            Email
+            {t('auth.emailLabel')}
           </label>
           <input
             id="email"
@@ -93,7 +97,7 @@ export default function SignIn() {
             className="input"
             value={email}
             onChange={(e) => setEmail(e.target.value)}
-            placeholder="jordan@school.edu"
+            placeholder={t('auth.emailPlaceholder')}
             autoComplete="email"
             required
           />
@@ -101,7 +105,7 @@ export default function SignIn() {
 
         <div className="mt-4">
           <label htmlFor="password" className="label">
-            Password
+            {t('auth.passwordLabel')}
           </label>
           <input
             id="password"
@@ -127,7 +131,7 @@ export default function SignIn() {
           disabled={busy || googleBusy || !isFirebaseConfigured}
         >
           {busy && <Spinner />}
-          Sign in with email
+          {t('auth.signInWithEmail')}
         </button>
       </form>
     </AuthShell>

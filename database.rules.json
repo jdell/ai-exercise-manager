@@ -62,6 +62,7 @@
         "reflection": { ".validate": "newData.isString() && newData.val().length <= 20000" },
         "output": { ".validate": "newData.isString()" },
         "createdAt": { ".validate": "newData.isNumber()" },
+        "locale": { ".validate": "newData.val() === 'en' || newData.val() === 'es'" },
         "error": { ".validate": "newData.isString() && newData.val().length <= 4000" },
 
         "status": {
