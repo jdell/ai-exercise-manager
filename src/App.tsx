@@ -1,5 +1,6 @@
 import { Navigate, Route, Routes } from 'react-router-dom';
 import { SessionProvider, useSession } from './context/SessionContext';
+import { ClassProvider } from './context/ClassContext';
 import { useLocale } from './context/LocaleContext';
 import Layout from './components/Layout';
 import SignIn from './pages/SignIn';
@@ -16,6 +17,7 @@ import TeacherDashboard from './pages/TeacherDashboard';
 import TeacherReview from './pages/TeacherReview';
 import ClassProgress from './pages/ClassProgress';
 import TeacherExercises from './pages/TeacherExercises';
+import TeacherClasses from './pages/TeacherClasses';
 import EvaluatorConsole from './pages/EvaluatorConsole';
 import Settings from './pages/Settings';
 import type { Role } from './types';
@@ -164,6 +166,14 @@ function AppRoutes() {
           }
         />
         <Route
+          path="/teacher/classes"
+          element={
+            <Protected roles={['teacher']}>
+              <TeacherClasses />
+            </Protected>
+          }
+        />
+        <Route
           path="/teacher/review/:submissionId"
           element={
             <Protected roles={['teacher']}>
@@ -199,7 +209,15 @@ function AppRoutes() {
 export default function App() {
   return (
     <SessionProvider>
-      <AppRoutes />
+      {/*
+        The class lens sits inside the session (it subscribes as a teacher and
+        renders nothing for a student) and outside the routes, so moving from
+        the review queue to analytics keeps the filter. It changes what a
+        teacher sees and never what anything computes — see ClassContext.
+      */}
+      <ClassProvider>
+        <AppRoutes />
+      </ClassProvider>
     </SessionProvider>
   );
 }

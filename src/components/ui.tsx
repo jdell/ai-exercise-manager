@@ -1,6 +1,8 @@
 import type { ReactNode } from 'react';
 import { Link } from 'react-router-dom';
 import { useLocale } from '../context/LocaleContext';
+import { useTheme } from '../context/ThemeContext';
+import { ALL_CLASSES, UNASSIGNED, useClassFilter } from '../context/ClassContext';
 import { LOCALES, activeLocale, tActive } from '../lib/i18n';
 import { ACHIEVEMENT_ICON, sortAchievements } from '../lib/achievements';
 import type {
@@ -15,6 +17,7 @@ import type {
   SecondOpinion,
   Submission,
   SubmissionStatus,
+  ThemePreference,
 } from '../types';
 import { RUBRIC, RUBRIC_BY_KEY, PASSING_SCORE, DEFAULT_WEIGHTS } from '../data/rubric';
 import { DIFFICULTY_STYLE, PATH_BY_ID } from '../data/paths';
@@ -91,7 +94,16 @@ export function ScoreRing({ score, size = 72 }: { score: number; size?: number }
   return (
     <div className="relative shrink-0" style={{ width: size, height: size }}>
       <svg width={size} height={size} className="-rotate-90" aria-hidden="true">
-        <circle cx={size / 2} cy={size / 2} r={radius} fill="none" stroke="#e5e7eb" strokeWidth="6" />
+        {/* The track follows the theme; the arc does not — the score bands are
+            the same three colours on either canvas. */}
+        <circle
+          cx={size / 2}
+          cy={size / 2}
+          r={radius}
+          fill="none"
+          stroke="var(--color-ink-200)"
+          strokeWidth="6"
+        />
         <circle
           cx={size / 2}
           cy={size / 2}
@@ -251,6 +263,152 @@ export function LanguagePicker({ className = '' }: { className?: string }) {
         ))}
       </select>
     </label>
+  );
+}
+
+// ---------------------------------------------------------------------------
+// Appearance
+// ---------------------------------------------------------------------------
+
+const THEME_ORDER: ThemePreference[] = ['light', 'dark', 'system'];
+
+const THEME_GLYPH: Record<ThemePreference, string> = {
+  light: 'M12 3v2M12 19v2M5.6 5.6l1.4 1.4M17 17l1.4 1.4M3 12h2M19 12h2M5.6 18.4L7 17M17 7l1.4-1.4',
+  dark: 'M20 14.5A8 8 0 1 1 9.5 4a6.5 6.5 0 0 0 10.5 10.5z',
+  system: 'M4 5h16v10H4zM9 19h6M12 15v4',
+};
+
+/**
+ * The theme switch, in the header.
+ *
+ * A cycling button rather than the `<select>` the language uses: there are
+ * three states, everyone recognises the sun and the moon, and the header has
+ * no room for a third dropdown. The label always names the state it is *in*,
+ * not the one it would move to — a control that announces its own future is
+ * how toggles end up mis-read by screen readers.
+ */
+export function ThemeToggle({ className = '' }: { className?: string }) {
+  const { preference, setPreference } = useTheme();
+  const { t } = useLocale();
+  const next = THEME_ORDER[(THEME_ORDER.indexOf(preference) + 1) % THEME_ORDER.length];
+  const label = `${t('layout.theme')}: ${t(`theme.${preference}`)}`;
+
+  return (
+    <button
+      type="button"
+      onClick={() => setPreference(next)}
+      className={`rounded-lg p-2 text-ink-500 transition-colors hover:bg-ink-100 hover:text-ink-900 ${className}`}
+      aria-label={label}
+      title={label}
+    >
+      <svg
+        className="h-4 w-4"
+        viewBox="0 0 24 24"
+        fill="none"
+        stroke="currentColor"
+        strokeWidth="2"
+        strokeLinecap="round"
+        strokeLinejoin="round"
+        aria-hidden="true"
+      >
+        {preference === 'light' && <circle cx="12" cy="12" r="4" />}
+        <path d={THEME_GLYPH[preference]} />
+      </svg>
+    </button>
+  );
+}
+
+/** The same three states, spelled out, for the Settings page. */
+export function ThemePicker() {
+  const { preference, setPreference } = useTheme();
+  const { t } = useLocale();
+
+  return (
+    <div className="flex flex-wrap gap-2">
+      {THEME_ORDER.map((option) => (
+        <button
+          key={option}
+          type="button"
+          onClick={() => setPreference(option)}
+          aria-pressed={preference === option}
+          className={`rounded-lg border px-4 py-2 text-sm font-medium transition-colors ${
+            preference === option
+              ? 'border-indigo-400 bg-indigo-50 text-indigo-800'
+              : 'border-ink-300 bg-white text-ink-700 hover:bg-ink-50'
+          }`}
+        >
+          {t(`theme.${option}`)}
+          {option === 'system' && (
+            <span className="ml-1.5 text-xs font-normal text-ink-400">
+              {t('theme.systemHint')}
+            </span>
+          )}
+        </button>
+      ))}
+    </div>
+  );
+}
+
+// ---------------------------------------------------------------------------
+// Classes
+// ---------------------------------------------------------------------------
+
+/**
+ * Which class the teacher screens are filtered to.
+ *
+ * Sits in the header rather than on each page because the filter is shared:
+ * moving from the review queue to analytics with the lens intact is the whole
+ * point of having one. It renders nothing when no classes exist — an app with
+ * one group of students should not grow a control that only ever says "all".
+ */
+export function ClassPicker() {
+  const { classes, selectedId, setSelectedId } = useClassFilter();
+  const { t } = useLocale();
+  if (classes.length === 0) return null;
+
+  return (
+    <label className="flex items-center">
+      <span className="sr-only">{t('classes.filter')}</span>
+      <select
+        value={selectedId}
+        onChange={(e) => setSelectedId(e.target.value)}
+        title={t('classes.filter')}
+        className="max-w-[10rem] truncate rounded-lg border border-ink-300 bg-white px-2 py-1 text-xs font-medium text-ink-700 hover:bg-ink-50 focus:border-indigo-500 focus:ring-2 focus:ring-indigo-100 focus:outline-none"
+      >
+        <option value={ALL_CLASSES}>{t('classes.all')}</option>
+        {classes.map((group) => (
+          <option key={group.id} value={group.id}>
+            {group.name} ({Object.keys(group.students ?? {}).length})
+          </option>
+        ))}
+        <option value={UNASSIGNED}>{t('classes.unassigned')}</option>
+      </select>
+    </label>
+  );
+}
+
+/**
+ * "You are looking at one class, not everyone."
+ *
+ * Renders nothing when the filter is off. A page that is quietly showing a
+ * subset is how a teacher concludes half the class has stopped submitting.
+ */
+export function ClassScopeNote({ count }: { count?: number }) {
+  const { selected, selectedId, showingAll, setSelectedId } = useClassFilter();
+  if (showingAll) return null;
+
+  const label = selected?.name ?? (selectedId === UNASSIGNED ? 'students in no class' : selectedId);
+
+  return (
+    <p className="mt-2 flex flex-wrap items-center gap-2 text-xs text-ink-500">
+      <span className="inline-flex items-center rounded-full border border-indigo-200 bg-indigo-50 px-2.5 py-0.5 font-medium text-indigo-800">
+        {label}
+        {count !== undefined && <span className="ml-1.5 text-indigo-700">· {count}</span>}
+      </span>
+      <button onClick={() => setSelectedId(ALL_CLASSES)} className="underline hover:text-ink-800">
+        Show everyone
+      </button>
+    </p>
   );
 }
 

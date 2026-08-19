@@ -1,6 +1,6 @@
 import { equalTo, onValue, orderByChild, query, ref, remove, set, update } from 'firebase/database';
 import { getDb } from './firebase';
-import type { Exercise, Role, Submission, UserProfile } from '../types';
+import type { ClassGroup, Exercise, Role, Submission, UserProfile } from '../types';
 
 /**
  * Data access for profiles, submissions, and teacher-authored exercises.
@@ -152,6 +152,81 @@ export async function saveExercise(exercise: Exercise): Promise<void> {
 
 export async function deleteExercise(id: string): Promise<void> {
   await remove(ref(requireDb(), `exercises/${id}`));
+}
+
+// --------------------------------------------------------------------------
+// Classes
+// --------------------------------------------------------------------------
+
+/**
+ * Teacher-run classes. Readable and writable by any teacher, denied to
+ * students by the rules — a class is a teacher's own organising tool, and
+ * nothing a student sees changes with it.
+ *
+ * Any teacher may edit any class rather than only their own. That matches how
+ * the rest of the app already works (every teacher can read every submission
+ * and review any of them) and it is what a covering teacher needs on the day
+ * the class's owner is off sick. `teacherName` records who set it up.
+ */
+export function subscribeClasses(
+  cb: Listener<ClassGroup[]>,
+  onError?: (err: Error) => void,
+): Unsubscribe {
+  const db = getDb();
+  if (!db) {
+    cb([]);
+    return () => {};
+  }
+  return onValue(
+    ref(db, 'classes'),
+    (snap) => cb(recordToList<ClassGroup>(snap.val())),
+    (err) => onError?.(err),
+  );
+}
+
+export async function saveClass(group: ClassGroup): Promise<void> {
+  await update(ref(requireDb(), `classes/${group.id}`), stripUndefined(group));
+}
+
+export async function deleteClass(id: string): Promise<void> {
+  await remove(ref(requireDb(), `classes/${id}`));
+}
+
+/**
+ * Adds or removes one student. A single-key write rather than replacing the
+ * roster, so two teachers editing the same class from two rooms do not
+ * overwrite each other's changes.
+ */
+export async function setClassMembership(
+  classId: string,
+  uid: string,
+  member: boolean,
+): Promise<void> {
+  const target = ref(requireDb(), `classes/${classId}/students/${uid}`);
+  if (member) await set(target, true);
+  else await remove(target);
+  await update(ref(requireDb(), `classes/${classId}`), { updatedAt: Date.now() });
+}
+
+// --------------------------------------------------------------------------
+// Connectivity
+// --------------------------------------------------------------------------
+
+/**
+ * Whether writes will actually land, from the database's own `.info/connected`
+ * rather than `navigator.onLine`.
+ *
+ * The two disagree in exactly the case that matters: a laptop attached to a
+ * captive-portal wifi reports online and cannot reach anything. `.info` is a
+ * client-side node with no rules and no round trip.
+ */
+export function subscribeConnection(cb: Listener<boolean>): Unsubscribe {
+  const db = getDb();
+  if (!db) {
+    cb(false);
+    return () => {};
+  }
+  return onValue(ref(db, '.info/connected'), (snap) => cb(snap.val() === true));
 }
 
 // --------------------------------------------------------------------------

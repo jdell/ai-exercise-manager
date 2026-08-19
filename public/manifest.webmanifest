@@ -1,0 +1,42 @@
+{
+  "name": "AI Skills Exercise Manager",
+  "short_name": "AI Skills",
+  "description": "Practise prompt engineering, get scored by Claude, and have every score reviewed by a teacher.",
+  "id": "/",
+  "start_url": "/",
+  "scope": "/",
+  "display": "standalone",
+  "orientation": "any",
+  "background_color": "#fbfbfc",
+  "theme_color": "#ffffff",
+  "lang": "en",
+  "dir": "ltr",
+  "categories": ["education", "productivity"],
+  "icons": [
+    {
+      "src": "/icons/icon.svg",
+      "sizes": "any",
+      "type": "image/svg+xml",
+      "purpose": "any"
+    },
+    {
+      "src": "/icons/icon-maskable.svg",
+      "sizes": "any",
+      "type": "image/svg+xml",
+      "purpose": "maskable"
+    }
+  ],
+  "shortcuts": [
+    {
+      "name": "Playground",
+      "short_name": "Playground",
+      "description": "Try a prompt without submitting it",
+      "url": "/playground"
+    },
+    {
+      "name": "Progress",
+      "short_name": "Progress",
+      "url": "/progress"
+    }
+  ]
+}

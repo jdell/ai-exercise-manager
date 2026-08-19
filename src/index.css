@@ -1,5 +1,12 @@
 @import 'tailwindcss';
 
+/*
+ * `dark:` utilities, for the handful of places a token swap cannot express
+ * (a shadow that should become a border, an opacity that should not follow the
+ * colour). The theme itself is variables, not variants — see below.
+ */
+@custom-variant dark (&:where([data-theme='dark'], [data-theme='dark'] *));
+
 @theme {
   --font-sans:
     ui-sans-serif, system-ui, -apple-system, 'Segoe UI', Roboto, 'Helvetica Neue', Arial,
@@ -17,6 +24,121 @@
   --color-ink-800: oklch(0.26 0.024 266);
   --color-ink-900: oklch(0.19 0.026 268);
   --color-ink-950: oklch(0.13 0.026 270);
+
+  /*
+   * Two colours that must NOT follow the theme.
+   *
+   * `onaccent` is the text on a saturated fill (a primary button, an approved
+   * cell). Those fills stay saturated in both themes, so their text stays
+   * white — `text-white` would flip with the surface and land dark-on-indigo.
+   *
+   * `slab`/`onslab` are the sign-in hero. It is the one deliberately dark
+   * panel in the app, and inverting it would put a near-white slab across half
+   * the sign-in screen of a dark-mode user.
+   */
+  --color-onaccent: #fff;
+  --color-slab: oklch(0.19 0.026 268);
+  --color-onslab: #fff;
+
+  /*
+   * Hover fills for the two solid buttons. In light mode a hover goes darker;
+   * in dark mode it has to go lighter, and the 700 step it used to name is
+   * reassigned to text below. Named here so the flip is one line, not a
+   * variant on every button.
+   */
+  --btn-primary-hover: var(--color-indigo-700);
+  --btn-success-hover: var(--color-emerald-700);
+}
+
+/*
+ * Dark mode.
+ *
+ * The whole theme is a token swap: the neutral ramp inverts, `white` becomes a
+ * raised surface one step lighter than the canvas, and each accent hue's tint
+ * steps (50–300, used as fills and borders) and text steps (700–900) trade
+ * places. Nothing below is a `dark:` variant, so a component written months ago
+ * against `bg-white text-ink-800` is already correct in both themes — and a new
+ * one cannot forget to be.
+ *
+ * The mid steps (400–600) are left alone on purpose. They are the saturated
+ * fills — a primary button, an approved cell, a chart mark — and they read the
+ * same on either canvas. `text-onaccent` is what goes on top of them.
+ *
+ * Wrapped in `@media screen` so none of it reaches the print pipeline. The
+ * report at /report/:studentId IS the PDF a guardian receives; it is always
+ * light, whatever the teacher's screen is set to.
+ */
+@media screen {
+  [data-theme='dark'] {
+    color-scheme: dark;
+
+    --color-ink-50: oklch(0.165 0.012 268);
+    --color-ink-100: oklch(0.235 0.014 267);
+    --color-ink-200: oklch(0.295 0.015 266);
+    --color-ink-300: oklch(0.375 0.017 265);
+    --color-ink-400: oklch(0.53 0.019 264);
+    --color-ink-500: oklch(0.655 0.02 263);
+    --color-ink-600: oklch(0.735 0.018 262);
+    --color-ink-700: oklch(0.8 0.016 262);
+    --color-ink-800: oklch(0.875 0.013 261);
+    --color-ink-900: oklch(0.945 0.008 260);
+    --color-ink-950: oklch(0.985 0.004 260);
+
+    /* Cards and inputs. One step lighter than the canvas, so a panel still
+       reads as raised rather than as a hole. */
+    --color-white: oklch(0.205 0.014 267);
+
+    --btn-primary-hover: var(--color-indigo-500);
+    --btn-success-hover: var(--color-emerald-500);
+
+    --color-indigo-50: oklch(0.245 0.045 275);
+    --color-indigo-100: oklch(0.285 0.06 275);
+    --color-indigo-200: oklch(0.35 0.075 275);
+    --color-indigo-300: oklch(0.44 0.095 275);
+    --color-indigo-700: oklch(0.8 0.1 275);
+    --color-indigo-800: oklch(0.865 0.075 275);
+    --color-indigo-900: oklch(0.915 0.05 275);
+
+    --color-emerald-50: oklch(0.245 0.045 162);
+    --color-emerald-100: oklch(0.285 0.06 162);
+    --color-emerald-200: oklch(0.35 0.075 162);
+    --color-emerald-300: oklch(0.44 0.095 162);
+    --color-emerald-700: oklch(0.8 0.11 162);
+    --color-emerald-800: oklch(0.865 0.08 162);
+    --color-emerald-900: oklch(0.915 0.05 162);
+
+    --color-amber-50: oklch(0.245 0.045 75);
+    --color-amber-100: oklch(0.285 0.06 75);
+    --color-amber-200: oklch(0.35 0.075 75);
+    --color-amber-300: oklch(0.44 0.095 75);
+    --color-amber-700: oklch(0.82 0.11 75);
+    --color-amber-800: oklch(0.88 0.08 75);
+    --color-amber-900: oklch(0.925 0.05 75);
+
+    --color-rose-50: oklch(0.245 0.045 15);
+    --color-rose-100: oklch(0.285 0.06 15);
+    --color-rose-200: oklch(0.35 0.075 15);
+    --color-rose-300: oklch(0.44 0.095 15);
+    --color-rose-700: oklch(0.8 0.1 15);
+    --color-rose-800: oklch(0.865 0.075 15);
+    --color-rose-900: oklch(0.915 0.05 15);
+
+    --color-sky-50: oklch(0.245 0.045 235);
+    --color-sky-100: oklch(0.285 0.06 235);
+    --color-sky-200: oklch(0.35 0.075 235);
+    --color-sky-700: oklch(0.8 0.1 235);
+    --color-sky-800: oklch(0.865 0.075 235);
+
+    --color-teal-50: oklch(0.245 0.045 190);
+    --color-teal-100: oklch(0.285 0.06 190);
+    --color-teal-200: oklch(0.35 0.075 190);
+    --color-teal-700: oklch(0.8 0.1 190);
+    --color-teal-800: oklch(0.865 0.075 190);
+
+    --color-violet-50: oklch(0.245 0.045 300);
+    --color-violet-200: oklch(0.35 0.075 300);
+    --color-violet-700: oklch(0.8 0.1 300);
+  }
 }
 
 @layer base {
@@ -57,8 +179,18 @@
            transition-colors disabled:cursor-not-allowed disabled:opacity-50;
   }
 
+  /*
+   * The two solid buttons take their hover from a variable rather than a
+   * `hover:bg-*` utility: their light-mode hover step (indigo-700, emerald-700)
+   * is a *text* colour in dark mode, so naming it here would turn a hovered
+   * button pale. See --btn-primary-hover in @theme.
+   */
   .btn-primary {
-    @apply bg-indigo-600 text-white hover:bg-indigo-700 disabled:hover:bg-indigo-600;
+    @apply bg-indigo-600 text-onaccent;
+  }
+
+  .btn-primary:hover:not(:disabled) {
+    background-color: var(--btn-primary-hover);
   }
 
   .btn-secondary {
@@ -74,7 +206,11 @@
   }
 
   .btn-success {
-    @apply bg-emerald-600 text-white hover:bg-emerald-700 disabled:hover:bg-emerald-600;
+    @apply bg-emerald-600 text-onaccent;
+  }
+
+  .btn-success:hover:not(:disabled) {
+    background-color: var(--btn-success-hover);
   }
 
   .input,

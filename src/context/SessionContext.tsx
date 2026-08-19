@@ -3,6 +3,7 @@ import type { ReactNode } from 'react';
 import type { User } from 'firebase/auth';
 import type { Session, UserProfile } from '../types';
 import * as auth from '../lib/auth';
+import { clearOfflineCache } from '../lib/offline';
 import { subscribeProfile, touchProfile } from '../lib/store';
 
 /**
@@ -125,8 +126,13 @@ export function SessionProvider({ children }: { children: ReactNode }) {
 
   const signOut = useCallback(async () => {
     setAuthError('');
+    // This is a classroom machine. The next student to sit down must not find
+    // the last one's work mirrored in localStorage — see lib/offline.ts. The
+    // outbox is deliberately NOT cleared: queued work belongs to whoever wrote
+    // it, and it is theirs to send when they sign back in.
+    clearOfflineCache(session?.id);
     await auth.signOut();
-  }, []);
+  }, [session?.id]);
 
   const value = useMemo(
     () => ({ session, loading, authError, signIn, signUp, signInWithGoogle, signOut }),

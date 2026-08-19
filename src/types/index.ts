@@ -11,6 +11,43 @@ export type Role = 'student' | 'teacher';
  */
 export type Locale = 'en' | 'es';
 
+/** What is actually painted. `system` resolves to one of these. */
+export type ThemeName = 'light' | 'dark';
+
+/**
+ * The reader's display choice. Unlike `Locale` this never travels: it is not
+ * recorded on a submission, is not sent to the evaluator, and changes nothing
+ * a teacher sees. It lives in this browser and stops there.
+ */
+export type ThemePreference = ThemeName | 'system';
+
+/**
+ * A class a teacher runs.
+ *
+ * Classes group the roster; they do not fork the curriculum. Every student
+ * works the same ordered exercise list under the same rubric, and
+ * `computeProgress()` remains the only place locking is decided — a class is a
+ * lens on the teacher's own screens, not a second progression.
+ *
+ * Membership is stored here rather than on the student's profile so that
+ * assigning someone is a teacher write to a teacher-owned node. The profile
+ * rules let a student write their own record, which would make a `classId`
+ * there something a student could set for themselves.
+ */
+export interface ClassGroup {
+  id: string;
+  name: string;
+  /** Free text: a period, a room, a term. Shown next to the name. */
+  note?: string;
+  /** The teacher who created it. Any teacher may read and edit any class. */
+  teacherId: string;
+  teacherName: string;
+  /** Member uids, as a set. Realtime Database has no arrays worth the name. */
+  students?: Record<string, boolean>;
+  createdAt: number;
+  updatedAt: number;
+}
+
 /**
  * A user's profile record at /users/$uid.
  *

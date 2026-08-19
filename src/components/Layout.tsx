@@ -1,8 +1,11 @@
 import { Navigate, NavLink, Outlet, useNavigate } from 'react-router-dom';
 import { useSession } from '../context/SessionContext';
 import { useLocale } from '../context/LocaleContext';
+import { useOnline } from '../hooks/useData';
+import { useOutbox } from '../hooks/useOutbox';
+import { useAppUpdate } from '../hooks/useAppUpdate';
 import { usingEmulators } from '../lib/firebase';
-import { LanguagePicker } from './ui';
+import { ClassPicker, LanguagePicker, Spinner, ThemeToggle } from './ui';
 import type { MessageKey } from '../lib/i18n';
 import type { Role } from '../types';
 
@@ -23,6 +26,7 @@ const NAV: Record<Role, { to: string; label: MessageKey }[]> = {
     { to: '/teacher/class', label: 'nav.classProgress' },
     { to: '/teacher/analytics', label: 'nav.analytics' },
     { to: '/teacher/exercises', label: 'nav.manageExercises' },
+    { to: '/teacher/classes', label: 'nav.classes' },
     { to: '/playground', label: 'nav.playground' },
     { to: '/evaluator', label: 'nav.evaluator' },
   ],
@@ -32,6 +36,12 @@ export default function Layout() {
   const { session, signOut } = useSession();
   const { t } = useLocale();
   const navigate = useNavigate();
+
+  // Hooks before the redirect below: React requires the same hook order on
+  // every render, and this component returns early when signed out.
+  const online = useOnline();
+  const { pending, syncing, error: syncError } = useOutbox();
+  const { updateReady, applyUpdate } = useAppUpdate();
 
   // Layout wraps every authenticated route, so the signed-out redirect has to
   // happen here — a child route's own <Navigate> would never render.
@@ -90,7 +100,10 @@ export default function Layout() {
               </span>
             )}
 
+            {session.role === 'teacher' && <ClassPicker />}
+
             <LanguagePicker />
+            <ThemeToggle />
 
             {/*
               The role is a claim on the server, not a UI toggle — it comes from
@@ -126,6 +139,47 @@ export default function Layout() {
         </div>
       </header>
 
+      {/*
+        The status strip: connection, queued work, and a parked update. It sits
+        under the header rather than inside a page because all three outlive
+        navigation — a student who queues an attempt and wanders to their
+        history should still be able to see that it has not gone anywhere.
+      */}
+      <div className="no-print" role="status" aria-live="polite">
+        {!online && (
+          <Strip tone="warning">
+            <span className="font-medium">{t('connection.offline')}</span>
+            <span className="hidden sm:inline">{t('connection.offlineBody')}</span>
+          </Strip>
+        )}
+
+        {pending.length > 0 && (
+          <Strip tone="info">
+            {syncing && <Spinner className="h-3.5 w-3.5 shrink-0" />}
+            <span>
+              {syncing
+                ? t('connection.syncing')
+                : t(`connection.queued.${pending.length === 1 ? 'one' : 'other'}` as MessageKey, {
+                    n: pending.length,
+                  })}
+            </span>
+          </Strip>
+        )}
+
+        {syncError && (
+          <Strip tone="warning">{t('connection.syncFailed', { error: syncError })}</Strip>
+        )}
+
+        {updateReady && (
+          <Strip tone="info">
+            <span>{t('update.ready')}</span>
+            <button onClick={applyUpdate} className="font-semibold underline underline-offset-2">
+              {t('update.reload')}
+            </button>
+          </Strip>
+        )}
+      </div>
+
       <main className="mx-auto w-full max-w-7xl flex-1 px-4 py-6 sm:px-6 sm:py-8">
         <Outlet />
       </main>
@@ -133,6 +187,28 @@ export default function Layout() {
       <footer className="border-t border-ink-200 py-5">
         <p className="mx-auto max-w-7xl px-4 text-xs text-ink-400 sm:px-6">{t('layout.footer')}</p>
       </footer>
+    </div>
+  );
+}
+
+/** One line of the status strip. Full-bleed, so it reads as chrome, not content. */
+function Strip({
+  tone,
+  children,
+}: {
+  tone: 'info' | 'warning';
+  children: React.ReactNode;
+}) {
+  const tones = {
+    info: 'border-sky-200 bg-sky-50 text-sky-800',
+    warning: 'border-amber-200 bg-amber-50 text-amber-800',
+  } as const;
+
+  return (
+    <div className={`border-b ${tones[tone]}`}>
+      <div className="mx-auto flex max-w-7xl flex-wrap items-center gap-x-2 gap-y-1 px-4 py-2 text-xs sm:px-6">
+        {children}
+      </div>
     </div>
   );
 }

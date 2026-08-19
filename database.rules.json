@@ -24,6 +24,34 @@
       }
     },
 
+    "classes": {
+      ".read": "auth != null && root.child('users').child(auth.uid).child('role').val() === 'teacher'",
+      ".indexOn": ["teacherId"],
+
+      "$classId": {
+        ".write": "auth != null && root.child('users').child(auth.uid).child('role').val() === 'teacher'",
+        ".validate": "!newData.exists() || newData.hasChildren(['id', 'name', 'teacherId', 'createdAt'])",
+
+        "id": { ".validate": "newData.val() === $classId" },
+        "name": {
+          ".validate": "newData.isString() && newData.val().length > 0 && newData.val().length <= 80"
+        },
+        "note": { ".validate": "newData.isString() && newData.val().length <= 200" },
+        "teacherId": { ".validate": "newData.isString() && newData.val().length <= 128" },
+        "teacherName": { ".validate": "newData.isString() && newData.val().length <= 80" },
+        "createdAt": { ".validate": "newData.isNumber()" },
+        "updatedAt": { ".validate": "newData.isNumber()" },
+
+        "students": {
+          "$uid": {
+            ".validate": "newData.val() === true && root.child('users').child($uid).child('role').val() === 'student'"
+          }
+        },
+
+        "$other": { ".validate": false }
+      }
+    },
+
     "exercises": {
       ".read": "auth != null",
 

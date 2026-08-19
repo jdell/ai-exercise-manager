@@ -1,9 +1,29 @@
 import { useEffect, useMemo, useState } from 'react';
-import { subscribeExercises, subscribeStudents, subscribeSubmissions } from '../lib/store';
+import {
+  subscribeClasses,
+  subscribeConnection,
+  subscribeExercises,
+  subscribeStudents,
+  subscribeSubmissions,
+} from '../lib/store';
 import { useSession } from '../context/SessionContext';
+import {
+  cacheCustomExercises,
+  cacheSubmissions,
+  cachedSubmissionsAt,
+  readCachedExercises,
+  readCachedSubmissions,
+} from '../lib/offline';
 import { EXERCISES, indexById, mergeExercises } from '../data/exercises';
 import { PATHS } from '../data/paths';
-import type { Exercise, ExerciseState, PathProgress, Submission, UserProfile } from '../types';
+import type {
+  ClassGroup,
+  Exercise,
+  ExerciseState,
+  PathProgress,
+  Submission,
+  UserProfile,
+} from '../types';
 
 /**
  * Subscriptions and the locking rule.
@@ -14,26 +34,58 @@ import type { Exercise, ExerciseState, PathProgress, Submission, UserProfile } f
  * Getting that wrong is a permission error, not a wider result set.
  */
 
-export function useSubmissions(): { submissions: Submission[]; loading: boolean; error: string } {
+export function useSubmissions(): {
+  submissions: Submission[];
+  loading: boolean;
+  error: string;
+  /** True while showing the offline mirror rather than a live snapshot. */
+  cached: boolean;
+  /** When that mirror was written. Undefined when the data is live. */
+  cachedAt?: number;
+} {
   const { session } = useSession();
   const [submissions, setSubmissions] = useState<Submission[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
+  const [cached, setCached] = useState(false);
+  const [cachedAt, setCachedAt] = useState<number | undefined>(undefined);
 
   useEffect(() => {
     if (!session) {
       setSubmissions([]);
       setLoading(false);
+      setCached(false);
       return;
     }
-    setLoading(true);
+
+    // Paint the mirror first so an offline student sees their work instead of
+    // an empty history that resolves minutes later, or never. A live snapshot
+    // overwrites this the moment one arrives — the cache is never a source.
+    //
+    // Students only: a teacher's read is the whole class, and mirroring that
+    // would leave every student's work in the localStorage of whatever machine
+    // the teacher last marked on.
+    if (session.role === 'student') {
+      const mirror = readCachedSubmissions(session.id);
+      if (mirror.length) {
+        setSubmissions(mirror);
+        setCached(true);
+        setCachedAt(cachedSubmissionsAt(session.id));
+        setLoading(false);
+      }
+    }
+
     return subscribeSubmissions(
       session.id,
       session.role,
       (list) => {
-        setSubmissions([...list].sort((a, b) => b.createdAt - a.createdAt));
+        const sorted = [...list].sort((a, b) => b.createdAt - a.createdAt);
+        setSubmissions(sorted);
         setError('');
         setLoading(false);
+        setCached(false);
+        setCachedAt(undefined);
+        if (session.role === 'student') cacheSubmissions(session.id, sorted);
       },
       (err) => {
         setError(err.message);
@@ -42,7 +94,53 @@ export function useSubmissions(): { submissions: Submission[]; loading: boolean;
     );
   }, [session?.id, session?.role]); // eslint-disable-line react-hooks/exhaustive-deps
 
-  return { submissions, loading, error };
+  return { submissions, loading, error, cached, cachedAt };
+}
+
+/**
+ * Whether the database is reachable, from `.info/connected` rather than
+ * `navigator.onLine` — see subscribeConnection() for why the two differ.
+ *
+ * Starts optimistic: a false "you are offline" banner on every cold start is
+ * worse than a second of silence before a real one.
+ */
+export function useOnline(): boolean {
+  const [online, setOnline] = useState(true);
+  useEffect(() => subscribeConnection(setOnline), []);
+  return online;
+}
+
+/**
+ * Every class, for the teacher screens. Students never subscribe: the rules
+ * deny them `/classes`, and nothing on their side of the app changes with it.
+ */
+export function useClasses(): { classes: ClassGroup[]; loading: boolean; error: string } {
+  const { session } = useSession();
+  const [classes, setClasses] = useState<ClassGroup[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState('');
+
+  useEffect(() => {
+    if (session?.role !== 'teacher') {
+      setClasses([]);
+      setLoading(false);
+      return;
+    }
+    setLoading(true);
+    return subscribeClasses(
+      (list) => {
+        setClasses([...list].sort((a, b) => a.name.localeCompare(b.name)));
+        setError('');
+        setLoading(false);
+      },
+      (err) => {
+        setError(err.message);
+        setLoading(false);
+      },
+    );
+  }, [session?.role]);
+
+  return { classes, loading, error };
 }
 
 /** The class roster. Teacher-only — the rules deny `/users` to students. */
@@ -88,12 +186,16 @@ export function useExercises(): {
   byId: Record<string, Exercise>;
   loading: boolean;
 } {
-  const [custom, setCustom] = useState<Exercise[]>([]);
+  // Seeded from the offline mirror so a custom exercise is readable without a
+  // connection. The built-in nine need no mirror — they are in the bundle the
+  // service worker cached.
+  const [custom, setCustom] = useState<Exercise[]>(readCachedExercises);
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
     const unsub = subscribeExercises((list) => {
       setCustom(list);
+      cacheCustomExercises(list);
       setLoading(false);
     });
     return unsub;

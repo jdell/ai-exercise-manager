@@ -49,6 +49,7 @@ const EN = {
   'nav.classProgress': 'Class progress',
   'nav.analytics': 'Analytics',
   'nav.manageExercises': 'Exercises',
+  'nav.classes': 'Classes',
   'nav.evaluator': 'Evaluator console',
   'nav.settings': 'Settings',
   'nav.signOut': 'Sign out',
@@ -58,10 +59,35 @@ const EN = {
   'layout.footer':
     'Scored by Claude against a fixed rubric · Every score is reviewed by a teacher before it counts',
   'layout.language': 'Language',
+  'layout.theme': 'Theme',
   'layout.checkingSession': 'Checking your session…',
 
   'role.student': 'Student',
   'role.teacher': 'Teacher',
+
+  // Appearance ------------------------------------------------------------
+  'theme.light': 'Light',
+  'theme.dark': 'Dark',
+  'theme.system': 'System',
+  'theme.systemHint': 'Follows this device',
+
+  // Connection, offline work, and updates ----------------------------------
+  'connection.offline': 'Offline',
+  'connection.offlineBody':
+    'You can read your exercises and write an attempt. Anything you submit is saved here and sent when you are back.',
+  'connection.cachedAt': 'Showing work saved {when}.',
+  'connection.queued.one': '{n} attempt waiting to send',
+  'connection.queued.other': '{n} attempts waiting to send',
+  'connection.syncing': 'Sending your queued work…',
+  'connection.syncFailed': 'Could not send your queued work. {error}',
+  'update.ready': 'A new version of the app is ready.',
+  'update.reload': 'Reload',
+
+  // Classes ---------------------------------------------------------------
+  // Teacher-only, but the picker lives in the shared header, which translates.
+  'classes.filter': 'Class',
+  'classes.all': 'All students',
+  'classes.unassigned': 'Unassigned',
 
   // Time ------------------------------------------------------------------
   'time.justNow': 'just now',
@@ -211,6 +237,14 @@ const EN = {
   'workspace.submitAttempt': 'Submit attempt {n}',
   'workspace.submitting': 'Submitting…',
   'workspace.submitHint': 'Submitting re-runs your prompt on the server, then scores what it produced.',
+  'workspace.queueAttempt': 'Queue attempt {n}',
+  'workspace.queueHint':
+    'You are offline. Your attempt is saved on this device and sent for scoring as soon as you reconnect.',
+  'workspace.queuedTitle': 'Attempt {n} is waiting to send',
+  'workspace.queuedBody':
+    'It is saved on this device. The moment you are back online it is submitted and scored — nothing is graded until then.',
+  'workspace.queueFull':
+    'Too many attempts are already waiting to send. Get back online to clear them before writing another.',
   'workspace.evaluatingStage': 'Running your prompt and scoring it…',
   'workspace.yourAttempts': 'Your attempts ({n})',
   'workspace.attemptsKept': 'Every attempt is kept, with the feedback it got.',
@@ -417,6 +451,17 @@ const EN = {
   'settings.userId': 'User ID',
   'settings.roleNote':
     'Your role is stored on your profile record and can only be changed by someone with database access — it is not something this page, or any page, can switch.',
+  'settings.appearance': 'Appearance',
+  'settings.appearanceSubtitle': 'Light or dark, or whatever this device is set to.',
+  'settings.appearanceNote':
+    'Remembered in this browser, like your language. Unlike your language it goes nowhere else — it is not recorded on your work, your teacher does not see it, and it changes nothing about how you are scored.',
+  'settings.offline': 'Offline use',
+  'settings.offlineSubtitle': 'What works without a connection.',
+  'settings.offlineOnline': 'Connected',
+  'settings.offlineOffline': 'No connection',
+  'settings.offlineQueued': 'Attempts waiting to send',
+  'settings.offlineNote':
+    'Install this app and it opens without a connection. You can read every exercise, look back at your own feedback, and write an attempt. Submitting needs the network — your prompt is run and scored on the server, so a queued attempt waits there until you reconnect.',
   'settings.language': 'Language',
   'settings.languageSubtitle': 'Applies to this browser, and to the feedback Claude writes you.',
   'settings.languageNote':
@@ -508,6 +553,7 @@ const ES: Record<MessageKey, string> = {
   'nav.classProgress': 'Progreso del grupo',
   'nav.analytics': 'Analíticas',
   'nav.manageExercises': 'Ejercicios',
+  'nav.classes': 'Grupos',
   'nav.evaluator': 'Consola del evaluador',
   'nav.settings': 'Ajustes',
   'nav.signOut': 'Cerrar sesión',
@@ -518,10 +564,31 @@ const ES: Record<MessageKey, string> = {
   'layout.footer':
     'Calificado por Claude con una rúbrica fija · Cada puntuación la revisa un docente antes de contar',
   'layout.language': 'Idioma',
+  'layout.theme': 'Tema',
   'layout.checkingSession': 'Comprobando tu sesión…',
 
   'role.student': 'Estudiante',
   'role.teacher': 'Docente',
+
+  'theme.light': 'Claro',
+  'theme.dark': 'Oscuro',
+  'theme.system': 'Sistema',
+  'theme.systemHint': 'Sigue a este dispositivo',
+
+  'connection.offline': 'Sin conexión',
+  'connection.offlineBody':
+    'Puedes leer tus ejercicios y escribir un intento. Lo que entregues se guarda aquí y se envía cuando vuelvas a tener conexión.',
+  'connection.cachedAt': 'Mostrando el trabajo guardado {when}.',
+  'connection.queued.one': '{n} intento esperando para enviarse',
+  'connection.queued.other': '{n} intentos esperando para enviarse',
+  'connection.syncing': 'Enviando tu trabajo pendiente…',
+  'connection.syncFailed': 'No se pudo enviar tu trabajo pendiente. {error}',
+  'update.ready': 'Hay una versión nueva de la app lista.',
+  'update.reload': 'Recargar',
+
+  'classes.filter': 'Grupo',
+  'classes.all': 'Todo el alumnado',
+  'classes.unassigned': 'Sin grupo',
 
   'time.justNow': 'hace un momento',
   'time.minutes': 'hace {n} min',
@@ -666,6 +733,14 @@ const ES: Record<MessageKey, string> = {
   'workspace.submitting': 'Entregando…',
   'workspace.submitHint':
     'Al entregar, el servidor vuelve a ejecutar tu prompt y califica lo que produjo.',
+  'workspace.queueAttempt': 'Guardar intento {n}',
+  'workspace.queueHint':
+    'Estás sin conexión. Tu intento se guarda en este dispositivo y se envía a calificar en cuanto vuelvas a conectarte.',
+  'workspace.queuedTitle': 'El intento {n} está esperando para enviarse',
+  'workspace.queuedBody':
+    'Está guardado en este dispositivo. En cuanto vuelvas a tener conexión se entrega y se califica — hasta entonces no se califica nada.',
+  'workspace.queueFull':
+    'Ya hay demasiados intentos esperando para enviarse. Vuelve a conectarte para vaciarlos antes de escribir otro.',
   'workspace.evaluatingStage': 'Ejecutando tu prompt y calificándolo…',
   'workspace.yourAttempts': 'Tus intentos ({n})',
   'workspace.attemptsKept': 'Se guardan todos los intentos, con la retroalimentación que recibieron.',
@@ -873,6 +948,17 @@ const ES: Record<MessageKey, string> = {
   'settings.userId': 'ID de usuario',
   'settings.roleNote':
     'Tu rol se guarda en tu perfil y solo puede cambiarlo alguien con acceso a la base de datos — no es algo que esta página, ni ninguna otra, pueda cambiar.',
+  'settings.appearance': 'Apariencia',
+  'settings.appearanceSubtitle': 'Claro u oscuro, o lo que tenga configurado este dispositivo.',
+  'settings.appearanceNote':
+    'Se recuerda en este navegador, igual que tu idioma. A diferencia del idioma, no va a ningún otro sitio — no queda registrado en tu trabajo, tu docente no lo ve y no cambia nada de cómo se te califica.',
+  'settings.offline': 'Uso sin conexión',
+  'settings.offlineSubtitle': 'Qué funciona sin red.',
+  'settings.offlineOnline': 'Con conexión',
+  'settings.offlineOffline': 'Sin conexión',
+  'settings.offlineQueued': 'Intentos esperando para enviarse',
+  'settings.offlineNote':
+    'Si instalas esta app, se abre sin conexión. Puedes leer todos los ejercicios, repasar tu propia retroalimentación y escribir un intento. Entregar sí necesita red — tu prompt se ejecuta y se califica en el servidor, así que un intento guardado espera ahí hasta que vuelvas a conectarte.',
   'settings.language': 'Idioma',
   'settings.languageSubtitle':
     'Se aplica a este navegador y a la retroalimentación que te escribe Claude.',
