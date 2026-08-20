@@ -1,6 +1,6 @@
 {
   "projects": {
-    "default": "ai-exercise-manager",
+    "default": "yk-ai-course",
     "production": "yk-ai-course"
   },
   "targets": {},
