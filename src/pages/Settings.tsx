@@ -1,13 +1,18 @@
 import { useSession } from '../context/SessionContext';
 import { useLocale } from '../context/LocaleContext';
+import { useOnline } from '../hooks/useData';
+import { useOutbox } from '../hooks/useOutbox';
 import { isFirebaseConfigured, usingEmulators } from '../lib/firebase';
+import { isInstalled, serviceWorkerSupported } from '../lib/pwa';
 import { LOCALES } from '../lib/i18n';
-import { Alert, Panel } from '../components/ui';
+import { Alert, Panel, ThemePicker } from '../components/ui';
 import type { Locale } from '../types';
 
 export default function Settings() {
   const { session, signOut } = useSession();
   const { locale, setLocale, t } = useLocale();
+  const online = useOnline();
+  const { pending } = useOutbox();
 
   return (
     <div className="mx-auto max-w-2xl space-y-6">
@@ -61,6 +66,37 @@ export default function Settings() {
         </div>
         <p className="hint mt-4">{t('settings.languageNote')}</p>
       </Panel>
+
+      {/*
+        Appearance sits next to language because they are the same kind of
+        setting — this browser's, not this account's — and the note says so.
+        The difference worth stating is that the language travels with a
+        submission and the theme travels nowhere.
+      */}
+      <Panel title={t('settings.appearance')} subtitle={t('settings.appearanceSubtitle')}>
+        <ThemePicker />
+        <p className="hint mt-4">{t('settings.appearanceNote')}</p>
+      </Panel>
+
+      {serviceWorkerSupported && (
+        <Panel title={t('settings.offline')} subtitle={t('settings.offlineSubtitle')}>
+          <dl className="divide-y divide-ink-100 text-sm">
+            <Row
+              label={t('settings.dataStore')}
+              value={
+                online ? (
+                  <span className="text-emerald-700">{t('settings.offlineOnline')}</span>
+                ) : (
+                  <span className="text-amber-700">{t('settings.offlineOffline')}</span>
+                )
+              }
+            />
+            <Row label={t('settings.offlineQueued')} value={pending.length} />
+            {isInstalled() && <Row label={t('app.name')} value="PWA" />}
+          </dl>
+          <p className="hint mt-4">{t('settings.offlineNote')}</p>
+        </Panel>
+      )}
 
       <Panel title={t('settings.apiKey')} subtitle={t('settings.apiKeySubtitle')}>
         <Alert tone="success">{t('settings.apiKeyBody')}</Alert>

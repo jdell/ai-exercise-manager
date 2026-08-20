@@ -231,6 +231,32 @@ Repository secrets, under **Settings → Secrets and variables → Actions**:
 There is deliberately no Anthropic key and no teacher passcode in that list —
 neither is a client-side value any more.
 
+### A custom domain
+
+The project's own `your-project-id.web.app` works out of the box. To serve the
+app from a school domain instead, see **[docs/custom-domain.md](docs/custom-domain.md)**
+— DNS records, the certificate wait, and the step everyone forgets (adding the
+new hostname to Authentication → Authorised domains, without which Google
+sign-in fails on the new domain and nowhere else).
+
+---
+
+## Installing it
+
+The app is a PWA: `public/manifest.webmanifest` plus a hand-written service
+worker at `public/sw.js`. Installed from the browser's menu, it opens without a
+connection, and a student can read every exercise, look back at their own
+feedback, and write an attempt offline.
+
+What offline *cannot* do is grade. The prompt is run and scored by a Cloud
+Function, so a submission made offline is queued on the device and sent the
+moment the database reports a connection — it carries the prompt and the
+reflection only, and the function still runs the prompt itself. Nobody gets to
+supply their own transcript, offline or on.
+
+The service worker is registered in production builds only. Against the dev
+server or the emulator suite it would cache a shell that changes on every save.
+
 ---
 
 ## Security notes

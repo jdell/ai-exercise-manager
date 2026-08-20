@@ -2,10 +2,12 @@ import { useEffect, useMemo, useRef, useState } from 'react';
 import { Link, Navigate, useParams } from 'react-router-dom';
 import { useSession } from '../context/SessionContext';
 import { useLocale } from '../context/LocaleContext';
-import { useExercises, useStudentProgress, useSubmissions } from '../hooks/useData';
+import { useExercises, useOnline, useStudentProgress, useSubmissions } from '../hooks/useData';
+import { useOutbox } from '../hooks/useOutbox';
 import { localizeExercise } from '../data/exercises';
 import { describeError, evaluateSubmission, runStudentPrompt } from '../lib/claude';
 import { createSubmission, newId } from '../lib/store';
+import { enqueue } from '../lib/outbox';
 import { EMPTY_PARTIAL } from '../lib/partial-json';
 import type { PartialEvaluation } from '../lib/partial-json';
 import {
@@ -35,6 +37,8 @@ export default function ExerciseWorkspace() {
   const { submissions, loading } = useSubmissions();
   const { exercises, byId, loading: exercisesLoading } = useExercises();
   const progress = useStudentProgress(session?.id, submissions, exercises);
+  const online = useOnline();
+  const { pending } = useOutbox();
 
   // Everything the student reads is localised; what gets submitted and graded
   // is keyed to the canonical exercise, which is why only `exercise` moves.
@@ -88,7 +92,12 @@ export default function ExerciseWorkspace() {
   if (entry?.state === 'locked') return <Navigate to="/" replace />;
 
   const state = entry?.state ?? 'available';
-  const readOnly = state === 'in_review' || state === 'approved';
+  // A queued attempt is submitted work that has not reached the server yet, so
+  // the editor locks the same way an in-review one does. Letting a student
+  // rewrite a prompt that is already on its way would grade text they can no
+  // longer see.
+  const queuedHere = pending.find((p) => p.submission.exerciseId === exercise.id);
+  const readOnly = state === 'in_review' || state === 'approved' || Boolean(queuedHere);
   const reflectionShort = reflection.trim().length < MIN_REFLECTION;
   const canSubmit = prompt.trim().length > 0 && !reflectionShort && !submitting && !running;
   const weights = effectiveWeights(exercise.rubricWeights);
@@ -154,6 +163,17 @@ export default function ExerciseWorkspace() {
       locale,
     };
 
+    // Offline: park it and stop. There is no offline grader — the prompt is run
+    // and scored by a Cloud Function — so the honest thing is to keep the work
+    // and say plainly that nothing is scored yet. The queue carries the prompt
+    // and the reflection only; the function still runs the prompt itself when
+    // it flushes, so rule 8 holds offline too.
+    if (!online) {
+      setSubmitting(false);
+      if (!enqueue(submission)) setError(t('workspace.queueFull'));
+      return;
+    }
+
     try {
       await createSubmission(submission);
 
@@ -218,6 +238,15 @@ export default function ExerciseWorkspace() {
           ) : (
             t('workspace.trackFinished')
           )}
+        </Alert>
+      )}
+
+      {queuedHere && (
+        <Alert tone="warning">
+          <span className="font-medium">
+            {t('workspace.queuedTitle', { n: queuedHere.submission.attempt })}
+          </span>{' '}
+          {t('workspace.queuedBody')}
         </Alert>
       )}
 
@@ -439,10 +468,16 @@ export default function ExerciseWorkspace() {
                   {submitting && <Spinner />}
                   {submitting
                     ? t('workspace.submitting')
-                    : t('workspace.submitAttempt', { n: (entry?.attempts.length ?? 0) + 1 })}
+                    : t(online ? 'workspace.submitAttempt' : 'workspace.queueAttempt', {
+                        n: (entry?.attempts.length ?? 0) + 1,
+                      })}
                 </button>
                 {stage && !partial && <span className="text-sm text-ink-500">{stage}</span>}
-                {!submitting && <span className="hint">{t('workspace.submitHint')}</span>}
+                {!submitting && (
+                  <span className="hint">
+                    {online ? t('workspace.submitHint') : t('workspace.queueHint')}
+                  </span>
+                )}
               </div>
             )}
           </Panel>

@@ -1,9 +1,10 @@
 import { useMemo, useState } from 'react';
 import { Link } from 'react-router-dom';
 import { useExercises, useStudents, useSubmissions } from '../hooks/useData';
+import { useClassFilter } from '../context/ClassContext';
 import { classAnalytics, formatDuration, formatPercent, studentAnalytics } from '../lib/analytics';
 import { BarChart, DivergingBars } from '../components/charts';
-import { EmptyState, Panel, scoreTone } from '../components/ui';
+import { ClassScopeNote, EmptyState, Panel, scoreTone } from '../components/ui';
 
 /**
  * Class-level analytics. Everything is derived from /submissions on read.
@@ -14,10 +15,21 @@ import { EmptyState, Panel, scoreTone } from '../components/ui';
  * overrule Claude is usually a criteria-wording problem.
  */
 export default function TeacherAnalytics() {
-  const { submissions, loading } = useSubmissions();
-  const { students } = useStudents();
+  const { submissions: allSubmissions, loading } = useSubmissions();
+  const { students: allStudents } = useStudents();
   const { exercises, loading: exercisesLoading } = useExercises();
+  const { filterStudents, filterSubmissions } = useClassFilter();
   const [showTable, setShowTable] = useState(false);
+
+  // The class lens is applied to the *inputs*, not to the figures. Every number
+  // below is still derived by the same functions over the same shape of data —
+  // a filtered class analytic is the analytic of a smaller class, not a
+  // different calculation. See ClassContext.
+  const students = useMemo(() => filterStudents(allStudents), [filterStudents, allStudents]);
+  const submissions = useMemo(
+    () => filterSubmissions(allSubmissions),
+    [filterSubmissions, allSubmissions],
+  );
 
   const studentIds = useMemo(() => students.map((s) => s.uid), [students]);
   const data = useMemo(
@@ -49,6 +61,7 @@ export default function TeacherAnalytics() {
           Where the track is working, where Claude and the teachers disagree, and how fast students
           are improving.
         </p>
+        <ClassScopeNote count={students.length} />
       </div>
 
       <div className="grid gap-4 sm:grid-cols-4">

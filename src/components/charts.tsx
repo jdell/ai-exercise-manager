@@ -25,16 +25,32 @@ import { useId, useState } from 'react';
  * `WARM` is below 3:1 against white, so a mark in it always carries its number.
  */
 
+/*
+ * Two kinds of colour here, and the difference is load-bearing.
+ *
+ * The *data* colours are fixed hex. A score of 82 is the same green in light
+ * mode, in dark mode, and in the printed PDF, because the reader is meant to
+ * learn what those bands mean once. They are mid-saturation and read on either
+ * canvas.
+ *
+ * The *furniture* — gridlines, axis text, the halo behind a label, the ring
+ * around a marker — is theme tokens, because its whole job is to sit quietly
+ * against whatever surface it is drawn on. `--color-white` is the card the
+ * chart is on, which is why it is the right halo in both themes.
+ */
+
 /** Single-hue magnitude, and the emphasis accent. */
 const SERIES = '#4f46e5';
 /** Diverging warm pole. Sub-3:1 on white — always label a mark drawn in it. */
 const WARM = '#f59e0b';
 /** Diverging cool pole. */
 const COOL = '#4f46e5';
-const NEUTRAL = '#d4d4d8';
-const GRID = '#e4e4e7';
-const AXIS = '#a1a1aa';
-const MUTED = '#71717a';
+const NEUTRAL = 'var(--color-ink-300)';
+const GRID = 'var(--color-ink-200)';
+const AXIS = 'var(--color-ink-300)';
+const MUTED = 'var(--color-ink-500)';
+/** The surface a chart is drawn on: haloes and marker rings, not data. */
+const SURFACE = 'var(--color-white)';
 
 function scoreColour(score: number): string {
   if (score >= 75) return '#059669';
@@ -155,7 +171,7 @@ export function TrendLine({
             textAnchor="start"
             fontSize="10"
             fill="#059669"
-            stroke="#ffffff"
+            stroke={SURFACE}
             strokeWidth="3"
             paintOrder="stroke"
           >
@@ -168,7 +184,7 @@ export function TrendLine({
           {points.map((p, i) => (
             <g key={`${p.label}-${i}`}>
               {/* A 2px surface ring keeps a marker legible where it sits on the line. */}
-              <circle cx={x(i)} cy={y(p.value)} r="5" fill="#ffffff" />
+              <circle cx={x(i)} cy={y(p.value)} r="5" fill={SURFACE} />
               <circle
                 cx={x(i)}
                 cy={y(p.value)}

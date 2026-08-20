@@ -1,6 +1,7 @@
 import { Link } from 'react-router-dom';
 import { computeProgress, useExercises, useStudents, useSubmissions } from '../hooks/useData';
-import { EmptyState, Panel, relativeTime, scoreTone } from '../components/ui';
+import { useClassFilter } from '../context/ClassContext';
+import { ClassScopeNote, EmptyState, Panel, relativeTime, scoreTone } from '../components/ui';
 import type { ExerciseState } from '../types';
 
 const CELL: Record<ExerciseState, { className: string; glyph: string; title: string }> = {
@@ -8,13 +9,20 @@ const CELL: Record<ExerciseState, { className: string; glyph: string; title: str
   available: { className: 'bg-white text-ink-300 border border-dashed border-ink-300', glyph: '', title: 'Available, not started' },
   in_review: { className: 'bg-amber-100 text-amber-700', glyph: '⋯', title: 'Awaiting review' },
   revision: { className: 'bg-rose-100 text-rose-700', glyph: '↻', title: 'Revision requested' },
-  approved: { className: 'bg-emerald-500 text-white', glyph: '✓', title: 'Approved' },
+  // `text-onaccent`, not `text-white`: the emerald fill stays saturated in both
+  // themes, so its text must stay white while `white` itself becomes a surface.
+  approved: { className: 'bg-emerald-500 text-onaccent', glyph: '✓', title: 'Approved' },
 };
 
 export default function ClassProgress() {
-  const { students, loading } = useStudents();
+  const { students: allStudents, loading } = useStudents();
   const { submissions } = useSubmissions();
   const { exercises } = useExercises();
+  const { filterStudents } = useClassFilter();
+
+  // Only the roster is narrowed. `computeProgress` still runs per student over
+  // the whole ordered exercise list — a class does not fork the progression.
+  const students = filterStudents(allStudents);
 
   const rows = students.map((student) => {
     const progress = computeProgress(student.uid, submissions, exercises);
@@ -34,13 +42,16 @@ export default function ClassProgress() {
         <p className="mt-1 text-sm text-ink-500">
           Where each student sits in the locked progression.
         </p>
+        <ClassScopeNote count={students.length} />
       </div>
 
       {loading && <div className="h-64 animate-pulse rounded-xl bg-ink-100" />}
 
       {!loading && students.length === 0 && (
-        <EmptyState title="No students yet">
-          Students appear here as soon as they sign in.
+        <EmptyState title={allStudents.length === 0 ? 'No students yet' : 'Nobody in this class'}>
+          {allStudents.length === 0
+            ? 'Students appear here as soon as they sign in.'
+            : 'Add students to it from the Classes page, or switch the filter back to everyone.'}
         </EmptyState>
       )}
 

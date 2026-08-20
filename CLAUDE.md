@@ -18,6 +18,12 @@ derived from approved work. The whole student-facing surface is available in
 English and Spanish, and Claude writes its feedback in whichever the student
 was working in.
 
+It installs as a PWA and opens without a connection: every exercise is readable
+offline and an attempt written offline is queued and sent on reconnect. It has a
+light and a dark theme, driven entirely by CSS variables rather than by `dark:`
+variants. Teachers can group the roster into classes, which filter their own
+screens and nothing else.
+
 Two roles, backed by Firebase Authentication:
 
 | Role | Does |
@@ -76,17 +82,30 @@ src/
 │   ├── analytics.ts    ← every analytics figure, derived from /submissions
 │   ├── achievements.ts ← badges, derived from /submissions
 │   ├── i18n.ts         ← the English and Spanish dictionaries + lookup
+│   ├── offline.ts      ← the localStorage read mirror (exercises, submissions)
+│   ├── outbox.ts       ← attempts written offline, waiting to be sent
+│   ├── pwa.ts          ← service worker registration + the update handshake
 │   ├── auth.ts         ← Firebase Auth + the createProfile call
 │   ├── firebase.ts     ← app/auth/db/functions handles + emulator wiring
 │   └── store.ts        ← database reads and writes, scoped by role
-├── hooks/useData.ts    ← subscriptions, useExercises(), computeProgress()
-│                         (the locking rule), pathProgress()
+├── hooks/
+│   ├── useData.ts      ← subscriptions, useExercises(), computeProgress()
+│   │                     (the locking rule), pathProgress(), useOnline()
+│   ├── useOutbox.ts    ← drains the outbox when the connection returns
+│   └── useAppUpdate.ts ← reports a parked service worker; never applies it
 ├── context/SessionContext.tsx  ← credential + profile = session
 ├── context/LocaleContext.tsx   ← the reader's language, t() and tn()
+├── context/ThemeContext.tsx    ← light/dark/system → one `data-theme` attribute
+├── context/ClassContext.tsx    ← which class the teacher screens are filtered to
 ├── components/         ← Layout, AuthShell, shared UI primitives
 │   └── charts.tsx      ← inline-SVG chart primitives (no charting dependency)
 ├── pages/              ← one file per route
 └── types/index.ts      ← every shared domain type
+
+public/
+├── sw.js               ← the service worker. Hand-written, no Workbox
+├── manifest.webmanifest
+└── icons/              ← SVG app icons (any + maskable)
 
 functions/
 ├── src/index.ts        ← the four callables
@@ -94,6 +113,7 @@ functions/
 └── src/guards.ts       ← auth/role checks, prior-attempt lookup
 
 database.rules.json     ← the actual access control
+docs/custom-domain.md   ← pointing a school domain at Firebase Hosting
 ```
 
 ## Rules that matter
@@ -406,6 +426,95 @@ Nothing about a playground run is stored: no submission, no output, nothing a
 teacher can read. An experiment that might be marked is not an experiment. The
 draft in the editor survives a reload via `localStorage` and goes no further.
 
+### 11. The theme is tokens, not variants
+
+Dark mode is a **palette swap under `[data-theme='dark']`** in `src/index.css`.
+The neutral ramp inverts, `--color-white` becomes a raised surface one step
+lighter than the canvas, and every accent hue's tint steps (50–300, the fills
+and borders) trade places with its text steps (700–900). A component written
+against `bg-white text-ink-800` is already correct in both themes — and a new
+one cannot forget to be, which is the point. `ThemeContext` sets one attribute
+and does nothing else.
+
+Four constraints hold it together:
+
+- **The mid steps (400–600) never move.** They are the saturated fills — a
+  primary button, an approved cell, a chart mark. Text on them is
+  `text-onaccent`, which is always white, because `text-white` now flips with
+  the surface and would land dark-on-indigo.
+- **`slab`/`onslab` never move either.** The sign-in hero is the one
+  deliberately dark panel; inverting it puts a near-white slab across half the
+  screen of someone who chose dark.
+- **`.btn-primary` and `.btn-success` take their hover from a variable.** Their
+  light-mode hover step (indigo-700, emerald-700) is a *text* colour in dark
+  mode, so a `hover:bg-indigo-700` utility would turn a hovered button pale.
+- **The dark block is wrapped in `@media screen`.** The report at
+  `/report/:studentId` is the PDF a guardian receives — it is always light,
+  whatever the teacher's screen is set to. That one line is why there is no
+  duplicated light palette in the print rules.
+
+In charts, *data* colour is fixed hex (a score of 82 is the same green in both
+themes and on paper) and *furniture* — grid, axis, haloes, marker rings — is
+tokens. Do not blur that line.
+
+There is a `dark:` variant registered for the cases a token swap genuinely
+cannot express. Reach for it last, not first.
+
+### 12. Offline reads, queued writes, and no offline grader
+
+The service worker (`public/sw.js`, hand-written, no Workbox) caches the shell.
+`src/lib/offline.ts` mirrors the exercise list and the reader's own submissions
+to `localStorage`. Together those make the app open, and open with something in
+it.
+
+- **The mirror is a fallback, never a source.** A live snapshot always wins and
+  always overwrites. Nothing is derived from the cache that is not derived the
+  same way from live data.
+- **Only students are mirrored.** A teacher's read is the whole class; mirroring
+  it would leave every student's work in the localStorage of the machine the
+  teacher last marked on. The mirror is dropped on sign-out for the same reason.
+- **Nothing cross-origin and nothing but GET is ever cached.** Every call
+  carrying identity or a grade — Auth, the database socket, the callables — is
+  cross-origin, so the service worker's same-origin guard is what makes a cached
+  score impossible rather than merely unlikely. Keep it that way.
+- **A queued attempt carries the prompt and the reflection, and nothing else.**
+  Rule 8 has no offline exception: the function still runs the prompt itself
+  when the outbox flushes. An outbox that carried its own transcript would be
+  exactly the text box for your own score that the whole design avoids.
+- **The queue does not renumber.** `attempt` is fixed when the student hits
+  submit, from what they could see at the time.
+- **An update is offered, never applied.** Taking over a waiting worker reloads
+  the page, and this app's most expensive moment is a student mid-submission
+  with an unsaved prompt in a textarea.
+
+The worker registers in production builds only — against the dev server it
+would cache a shell that changes on every save.
+
+### 13. A class is a lens, not a second progression
+
+Classes live at `/classes/$classId` with membership as a `students` set, and
+`ClassContext` applies the selection to the teacher screens: the review queue,
+class progress, and analytics. Every filter there removes rows from a view;
+none of them changes a number.
+
+That is the whole constraint. `computeProgress()` is still the only place
+locking is decided and it still runs over one ordered exercise list for
+everyone; `analytics.ts` still derives from `/submissions` by the same
+functions, applied to a smaller set. The moment a class carries its own
+exercises or its own passing score, three derived modules each grow a "which
+class" parameter and the single source of truth becomes several.
+
+Two smaller decisions worth keeping:
+
+- **Membership lives on the class, not on the profile.** The profile rules let a
+  student write their own record, so a `classId` there is something a student
+  could set for themselves.
+- **Any teacher may edit any class.** It matches how reviews already work — every
+  teacher can read and review every submission — and it is what a covering
+  teacher needs on the day the class's owner is off sick.
+
+Students never see a class, and `/classes` is denied to them by the rules.
+
 ## Authentication and authorisation
 
 Three layers, in order of authority:
@@ -440,7 +549,8 @@ reason, and it recurses into nested objects because exercise records carry them
 (rubric weight overrides). Use it on any new write path.
 
 Database nodes: `/students`, `/submissions`, `/exercises` (custom exercises
-only — the built-in nine are compiled in and must never be written there), and
+only — the built-in nine are compiled in and must never be written there),
+`/classes` (teacher-only, read and write; students are denied it entirely), and
 `/rateLimits` (playground quota counters, written only by the function; it has
 no rule at all, so the root default denies every client).
 
@@ -492,7 +602,14 @@ adding a variant.
 - UI primitives live in `components/ui.tsx`. Reuse `Panel`, `Alert`, `ScoreRing`,
   `RubricBreakdown`, `StatusBadge`, `RevisionTimeline`, `LiveEvaluation`,
   `PathChip`, `DifficultyBadge`, `CharCounter`, `AchievementGrid`,
-  `LanguagePicker` rather than hand-rolling equivalents.
+  `LanguagePicker`, `ThemeToggle`, `ThemePicker`, `ClassPicker`,
+  `ClassScopeNote` rather than hand-rolling equivalents.
+- Everything stored in `localStorage` is a *preference or a draft*, never work
+  that matters, and every key is namespaced `aiskills.*`: the language, the
+  theme, the teacher's class filter, the playground draft, the offline read
+  mirror, and the outbox. The one exception proves the rule — an outbox entry is
+  real work, which is why it is queued rather than discarded and why sign-out
+  clears the mirror but not the queue.
 - No user-visible string is written inline in a student-facing component. Add a
   key to both dictionaries in `lib/i18n.ts` and read it through `useLocale()`.
   Plurals go through `tn()` and its `.one` / `.other` variants.

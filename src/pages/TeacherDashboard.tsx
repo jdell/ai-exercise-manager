@@ -1,8 +1,10 @@
 import { useMemo, useState } from 'react';
 import { Link } from 'react-router-dom';
 import { useExercises, useStudents, useSubmissions } from '../hooks/useData';
+import { useClassFilter } from '../context/ClassContext';
 import { PASSING_SCORE } from '../data/rubric';
 import {
+  ClassScopeNote,
   EmptyState,
   IntegrityBadge,
   Panel,
@@ -24,11 +26,21 @@ const FILTERS: { value: Filter; label: string }[] = [
 ];
 
 export default function TeacherDashboard() {
-  const { submissions, loading } = useSubmissions();
-  const { students } = useStudents();
+  const { submissions: allSubmissions, loading } = useSubmissions();
+  const { students: allStudents } = useStudents();
   const { exercises, byId } = useExercises();
+  const { filterStudents, filterSubmissions } = useClassFilter();
   const [filter, setFilter] = useState<Filter>('queue');
   const [query, setQuery] = useState('');
+
+  // Narrowed once, at the top, so every count and every row below agrees about
+  // who is in view. Filtering per-section is how a stat ends up disagreeing
+  // with the list underneath it.
+  const students = useMemo(() => filterStudents(allStudents), [filterStudents, allStudents]);
+  const submissions = useMemo(
+    () => filterSubmissions(allSubmissions),
+    [filterSubmissions, allSubmissions],
+  );
 
   const counts = useMemo(() => {
     const queue = submissions.filter((s) => s.status === 'awaiting_review').length;
@@ -72,6 +84,7 @@ export default function TeacherDashboard() {
         <p className="mt-1 text-sm text-ink-500">
           Claude has scored these. Nothing counts until you approve it.
         </p>
+        <ClassScopeNote count={students.length} />
       </div>
 
       <div className="grid gap-4 sm:grid-cols-4">
