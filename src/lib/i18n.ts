@@ -514,11 +514,10 @@ const EN = {
     'Work through the exercises, get scored by Claude, and unlock the next one.',
   'auth.roleTeacherBlurb':
     "Review Claude's scores, override them where you disagree, and approve progression.",
-  'auth.teacherCodeLabel': 'Teacher signing code',
-  'auth.teacherCodeHint':
-    'Checked on the server against the TEACHER_SIGNUP_CODE secret. It is never sent to the browser, so it cannot be read out of the page.',
+  'auth.teacherCodeLabel': 'Teacher access code',
+  'auth.teacherCodeHint': "Contact your administrator if you don't have a code.",
   'auth.googleAsRole': 'Continue with Google as {role}',
-  'auth.needsCode': 'Enter the signing code to continue as a teacher.',
+  'auth.needsCode': 'Enter the access code to continue as a teacher.',
   'auth.orSignUpEmail': 'or sign up with email',
   'auth.nameLabel': 'Your name',
   'auth.namePlaceholderStudent': 'Jordan Mills',
@@ -1011,11 +1010,10 @@ const ES: Record<MessageKey, string> = {
     'Avanza por los ejercicios, recibe la puntuación de Claude y desbloquea el siguiente.',
   'auth.roleTeacherBlurb':
     'Revisa las puntuaciones de Claude, corrígelas cuando no estés de acuerdo y aprueba el avance.',
-  'auth.teacherCodeLabel': 'Código de registro docente',
-  'auth.teacherCodeHint':
-    'Se comprueba en el servidor contra el secreto TEACHER_SIGNUP_CODE. Nunca se envía al navegador, así que no puede leerse desde la página.',
+  'auth.teacherCodeLabel': 'Código de acceso docente',
+  'auth.teacherCodeHint': 'Contacta con tu administrador si no tienes código.',
   'auth.googleAsRole': 'Continuar con Google como {role}',
-  'auth.needsCode': 'Introduce el código de registro para continuar como docente.',
+  'auth.needsCode': 'Introduce el código de acceso para continuar como docente.',
   'auth.orSignUpEmail': 'o regístrate con correo',
   'auth.nameLabel': 'Tu nombre',
   'auth.namePlaceholderStudent': 'Jordan Mills',
