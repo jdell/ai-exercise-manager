@@ -35,6 +35,28 @@ The role lives on the user's profile record at `/users/$uid` and is written by
 one Cloud Function. It is not a UI toggle, and there is no third "evaluator"
 role any more — the console is a teacher route.
 
+## The feature set, by phase
+
+What exists and roughly when it arrived. Useful for reading the git history and
+for knowing which rule below a piece of code is answering to; the rules
+themselves are the authority, not this table.
+
+| Phase | What it added | Where it lives |
+|---|---|---|
+| 1 | The core loop: exercises, the four-dimension rubric, structured-output grading, a teacher review queue, the locked progression | `data/rubric.ts`, `lib/evaluator-prompt.ts`, `hooks/useData.ts` |
+| 2 | **Security.** The Anthropic key moved to Secret Manager and the API calls to Cloud Functions; Firebase Auth with email/password and Google; real database rules; `createProfile` as the only writer of `role` | `functions/`, `database.rules.json`, `lib/auth.ts` |
+| 3 | **Learning experience.** Learning paths, difficulty badges, worked examples, tips, prompt-length budgets, streamed evaluation with a partial-JSON preview, teacher-authored custom exercises | `data/paths.ts`, `lib/partial-json.ts`, `pages/TeacherExercises.tsx` |
+| 4 | **Assessment quality.** A Haiku second opinion that exists to disagree, deterministic integrity heuristics, blind scoring and the teacher-vs-Claude calibration delta, per-exercise rubric weights, the Evaluator Console | `lib/integrity.ts`, `lib/calibration.ts`, `pages/EvaluatorConsole.tsx` |
+| 5 | **Analytics and reporting.** Every figure derived from `/submissions` on read, hand-rolled inline-SVG charts, learning velocity, and the printable guardian report | `lib/analytics.ts`, `components/charts.tsx`, `pages/ReportCard.tsx` |
+| 6 | **Content and reach.** Four real-world challenges carrying a `scenario`, the ungraded playground behind a per-user quota, derived badges, and the full English/Spanish surface | `data/exercises.es.ts`, `lib/achievements.ts`, `lib/i18n.ts`, `pages/Playground.tsx` |
+| 7 | **Platform.** Installable PWA with offline reading and a queued outbox, a CSS-variable dark theme, teacher-managed classes, and custom-domain docs | `public/sw.js`, `lib/offline.ts`, `lib/outbox.ts`, `context/ThemeContext.tsx`, `context/ClassContext.tsx` |
+| — | **Quick wins.** Shaped loading skeletons, ⌘↵ / Escape shortcuts, copy-to-clipboard for feedback and transcripts, CSV export for teachers | `components/ui.tsx`, `hooks/useHotkeys.ts`, `lib/csv.ts`, `lib/feedback-text.ts` |
+
+Three things have been true since phase 1 and are the spine of everything above:
+**the model never supplies the total**, **progress and every figure derived from
+it are computed on read, never stored**, and **a teacher decides**. A change that
+weakens one of those is a change to the pedagogy, not to the code.
+
 ## Stack
 
 - **React 19 + TypeScript**, Vite 7, Tailwind CSS v4 (`@tailwindcss/vite`), React Router 7
@@ -82,6 +104,8 @@ src/
 │   ├── analytics.ts    ← every analytics figure, derived from /submissions
 │   ├── achievements.ts ← badges, derived from /submissions
 │   ├── i18n.ts         ← the English and Spanish dictionaries + lookup
+│   ├── csv.ts          ← CSV export. RFC 4180 quoting + formula-injection guard
+│   ├── feedback-text.ts ← Claude's feedback as plain text, for the clipboard
 │   ├── offline.ts      ← the localStorage read mirror (exercises, submissions)
 │   ├── outbox.ts       ← attempts written offline, waiting to be sent
 │   ├── pwa.ts          ← service worker registration + the update handshake
@@ -92,6 +116,7 @@ src/
 │   ├── useData.ts      ← subscriptions, useExercises(), computeProgress()
 │   │                     (the locking rule), pathProgress(), useOnline()
 │   ├── useOutbox.ts    ← drains the outbox when the connection returns
+│   ├── useHotkeys.ts   ← ⌘↵ submits; Escape leaves only when it costs nothing
 │   └── useAppUpdate.ts ← reports a parked service worker; never applies it
 ├── context/SessionContext.tsx  ← credential + profile = session
 ├── context/LocaleContext.tsx   ← the reader's language, t() and tn()
@@ -515,6 +540,47 @@ Two smaller decisions worth keeping:
 
 Students never see a class, and `/classes` is denied to them by the rules.
 
+### 14. Shortcuts and exports never destroy work
+
+Two small features that are easy to get wrong in the same way.
+
+**Keyboard shortcuts** (`hooks/useHotkeys.ts`):
+
+- ⌘/Ctrl+Enter submits, never plain Enter. Submitting writes an attempt, spends
+  tokens grading it, and puts the result in a teacher's queue; a shortcut that
+  fired on a stray keypress would manufacture attempts nobody meant to make.
+  It is always bound to the same condition as the button it mirrors.
+- **Escape leaves only when leaving costs nothing.** In a text field it blurs
+  and stops. Otherwise it navigates, unless the page says it is holding unsaved
+  work — a typed prompt, a typed review comment. None of that survives
+  unmounting, so the shortcut is deliberately inert on the pages that are
+  editors and live on the pages that are views. `<KeyHint>` names the keys so
+  the asymmetry is discoverable rather than mysterious.
+
+**CSV export** (`lib/csv.ts`):
+
+- **Cells are neutralised against formula injection.** A prompt or a reflection
+  is untrusted student text, and a cell beginning `= + - @` is executed by
+  Excel and Sheets on open. Quoting does not help — the formula is parsed after
+  the CSV is — so a leading apostrophe is prepended, which spreadsheets read as
+  "literal" and strip from the display.
+- **An export contains exactly what is on screen**, class lens and filters
+  applied. An export button that quietly dumped everything would contradict the
+  page it sits on.
+- **The produced output and the integrity report are not exported.** The output
+  makes the file unreadable in a spreadsheet, and the integrity flags mean
+  nothing outside the review screen that explains them — a "concern: 62" column
+  read next to a name in a staff meeting is exactly the accusation rule 2b says
+  it is not.
+- The score column follows `analytics.ts`: the teacher's final score where one
+  exists, Claude's otherwise, with Claude's total in its own column so an
+  override is visible rather than silent.
+
+Skeletons are **shaped** — a card where a card is coming, ragged lines where
+prose is coming. A single full-height grey rectangle tells the reader only that
+something is happening. They live in `components/ui.tsx`; do not hand-roll
+another `animate-pulse` block.
+
 ## Authentication and authorisation
 
 Three layers, in order of authority:
@@ -603,7 +669,8 @@ adding a variant.
   `RubricBreakdown`, `StatusBadge`, `RevisionTimeline`, `LiveEvaluation`,
   `PathChip`, `DifficultyBadge`, `CharCounter`, `AchievementGrid`,
   `LanguagePicker`, `ThemeToggle`, `ThemePicker`, `ClassPicker`,
-  `ClassScopeNote` rather than hand-rolling equivalents.
+  `ClassScopeNote`, `CopyButton`, `KeyHint`, and the `Skeleton*` family rather
+  than hand-rolling equivalents.
 - Everything stored in `localStorage` is a *preference or a draft*, never work
   that matters, and every key is namespaced `aiskills.*`: the language, the
   theme, the teacher's class filter, the playground draft, the offline read

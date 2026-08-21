@@ -2,7 +2,8 @@ import { useEffect, useRef, useState } from 'react';
 import { useLocale } from '../context/LocaleContext';
 import { describeError, runPlaygroundPrompt } from '../lib/claude';
 import { PLAYGROUND_PAIRS } from '../data/playground-pairs';
-import { Alert, EmptyState, Panel, Spinner } from '../components/ui';
+import { Alert, CopyButton, EmptyState, KeyHint, Panel, Spinner } from '../components/ui';
+import { useSubmitHotkey } from '../hooks/useHotkeys';
 
 /**
  * A scratch space for prompts.
@@ -164,6 +165,12 @@ export default function Playground() {
   }
 
   const anyRunning = variants.a.running || variants.b.running;
+  const canRun = !anyRunning && Boolean(variants.a.prompt.trim() || variants.b.prompt.trim());
+
+  // ⌘↵ runs both. Nothing here is stored or graded, so this is the one place
+  // the shortcut costs a token spend and nothing else. Escape is deliberately
+  // not bound: the draft in the editor is the reader's work in progress.
+  useSubmitHotkey(runBoth, canRun);
   const bothDone = Boolean(variants.a.output && variants.b.output) && !anyRunning;
   const lengthGap = Math.abs(variants.a.output.length - variants.b.output.length);
 
@@ -187,11 +194,12 @@ export default function Playground() {
         action={
           <button
             onClick={runBoth}
-            disabled={anyRunning || (!variants.a.prompt.trim() && !variants.b.prompt.trim())}
+            disabled={!canRun}
             className="btn-primary px-3 py-1.5 text-xs"
           >
             {anyRunning && <Spinner className="h-3.5 w-3.5" />}
             {t('playground.runBoth')}
+            {canRun && <KeyHint keys="submit" />}
           </button>
         }
       >
@@ -305,6 +313,9 @@ function VariantPanel({
       title={title}
       action={
         <div className="flex items-center gap-1">
+          {variant.output && !variant.running && (
+            <CopyButton text={() => variant.output} label={t('common.copyOutput')} />
+          )}
           {extraAction}
           {variant.running ? (
             <button onClick={onStop} className="btn-secondary px-3 py-1.5 text-xs">

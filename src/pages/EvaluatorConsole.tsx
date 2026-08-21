@@ -4,7 +4,15 @@ import { PASSING_SCORE, RUBRIC, RUBRIC_KEYS, effectiveWeights } from '../data/ru
 import { describeError, evaluateSubmission } from '../lib/claude';
 import { buildEvaluatorSystemPrompt } from '../lib/evaluator-prompt';
 import { DISAGREEMENT_THRESHOLD, calibration } from '../lib/calibration';
-import { Alert, EmptyState, Panel, Spinner, relativeTime, scoreTone } from '../components/ui';
+import {
+  Alert,
+  EmptyState,
+  Panel,
+  SkeletonText,
+  Spinner,
+  relativeTime,
+  scoreTone,
+} from '../components/ui';
 import type { RubricKey } from '../types';
 
 export default function EvaluatorConsole() {
@@ -257,7 +265,7 @@ export default function EvaluatorConsole() {
           </Panel>
 
           <Panel title="Evaluation log" subtitle="Every score Claude has produced, newest first.">
-            {loading && <div className="h-32 animate-pulse rounded-lg bg-ink-100" />}
+            {loading && <SkeletonText lines={4} />}
             {!loading && evaluated.length === 0 && (
               <EmptyState title="No evaluations yet">
                 Scores appear here as students submit work.

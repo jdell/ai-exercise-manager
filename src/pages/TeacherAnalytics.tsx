@@ -4,7 +4,7 @@ import { useExercises, useStudents, useSubmissions } from '../hooks/useData';
 import { useClassFilter } from '../context/ClassContext';
 import { classAnalytics, formatDuration, formatPercent, studentAnalytics } from '../lib/analytics';
 import { BarChart, DivergingBars } from '../components/charts';
-import { ClassScopeNote, EmptyState, Panel, scoreTone } from '../components/ui';
+import { ClassScopeNote, EmptyState, Panel, SkeletonPage, scoreTone } from '../components/ui';
 
 /**
  * Class-level analytics. Everything is derived from /submissions on read.
@@ -47,7 +47,7 @@ export default function TeacherAnalytics() {
   );
 
   if (loading || exercisesLoading) {
-    return <div className="h-96 animate-pulse rounded-xl bg-ink-100" />;
+    return <SkeletonPage panels={3} />;
   }
 
   const attempted = data.exercises.filter((e) => e.attempted > 0);

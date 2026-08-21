@@ -13,6 +13,7 @@ import {
   PathChip,
   RubricLegend,
   ScoreRing,
+  Skeleton,
   StateBadge,
   relativeTime,
 } from '../components/ui';
@@ -137,7 +138,7 @@ export default function StudentDashboard() {
           {busy && (
             <div className="space-y-3">
               {[0, 1, 2, 3, 4].map((i) => (
-                <div key={i} className="h-[104px] animate-pulse rounded-xl bg-ink-100" />
+                <Skeleton key={i} className="h-[104px] rounded-xl" />
               ))}
             </div>
           )}

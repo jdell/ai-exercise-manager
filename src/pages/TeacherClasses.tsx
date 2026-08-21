@@ -3,7 +3,15 @@ import { useClassFilter } from '../context/ClassContext';
 import { useSession } from '../context/SessionContext';
 import { computeProgress, useExercises, useStudents, useSubmissions } from '../hooks/useData';
 import { deleteClass, newId, saveClass, setClassMembership } from '../lib/store';
-import { Alert, EmptyState, Panel, relativeTime, scoreTone } from '../components/ui';
+import {
+  Alert,
+  EmptyState,
+  Panel,
+  SkeletonPanel,
+  SkeletonText,
+  relativeTime,
+  scoreTone,
+} from '../components/ui';
 import type { ClassGroup, UserProfile } from '../types';
 
 /**
@@ -150,7 +158,7 @@ export default function TeacherClasses() {
         </div>
       </Panel>
 
-      {loading && <div className="h-40 animate-pulse rounded-xl bg-ink-100" />}
+      {loading && <SkeletonPanel lines={2} />}
 
       {!loading && classes.length === 0 && (
         <EmptyState title="No classes yet">
@@ -315,7 +323,7 @@ function RosterEditor({
         />
       </div>
 
-      {loading && <div className="h-24 animate-pulse rounded-lg bg-ink-100" />}
+      {loading && <SkeletonText lines={3} />}
 
       {!loading && students.length === 0 && (
         <p className="text-sm text-ink-500">No students have signed in yet.</p>

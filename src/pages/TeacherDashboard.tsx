@@ -9,10 +9,13 @@ import {
   IntegrityBadge,
   Panel,
   ScoreRing,
+  SkeletonRows,
+  SkeletonStats,
   StatusBadge,
   relativeTime,
   scoreTone,
 } from '../components/ui';
+import { downloadCsv, stampedFilename, submissionsToCsv } from '../lib/csv';
 import type { Submission, SubmissionStatus } from '../types';
 
 type Filter = 'queue' | 'all' | SubmissionStatus;
@@ -87,12 +90,16 @@ export default function TeacherDashboard() {
         <ClassScopeNote count={students.length} />
       </div>
 
-      <div className="grid gap-4 sm:grid-cols-4">
-        <Stat label="Awaiting review" value={counts.queue} accent={counts.queue > 0} />
-        <Stat label="Active students" value={students.length} />
-        <Stat label="Class average" value={counts.average || '—'} />
-        <Stat label="Below the bar" value={counts.belowBar} />
-      </div>
+      {loading ? (
+        <SkeletonStats />
+      ) : (
+        <div className="grid gap-4 sm:grid-cols-4">
+          <Stat label="Awaiting review" value={counts.queue} accent={counts.queue > 0} />
+          <Stat label="Active students" value={students.length} />
+          <Stat label="Class average" value={counts.average || '—'} />
+          <Stat label="Below the bar" value={counts.belowBar} />
+        </div>
+      )}
 
       <div className="flex flex-wrap items-center gap-3">
         <div className="flex flex-wrap gap-1.5">
@@ -122,9 +129,25 @@ export default function TeacherDashboard() {
           onChange={(e) => setQuery(e.target.value)}
           aria-label="Search submissions"
         />
+        {/*
+          Exports exactly what is on screen — the class lens, the status filter,
+          and the search, all applied. An export button that quietly dumped
+          everything would contradict the page it sits on.
+        */}
+        <button
+          onClick={() =>
+            downloadCsv(stampedFilename('submissions'), submissionsToCsv(filtered, byId))
+          }
+          disabled={filtered.length === 0}
+          className="btn-secondary"
+          title="Download the submissions shown below as a CSV"
+        >
+          Export CSV
+          <span className="text-xs font-normal text-ink-400">{filtered.length}</span>
+        </button>
       </div>
 
-      {loading && <div className="h-64 animate-pulse rounded-xl bg-ink-100" />}
+      {loading && <SkeletonRows rows={5} />}
 
       {!loading && filtered.length === 0 && (
         <EmptyState title={filter === 'queue' ? 'Queue is clear' : 'Nothing matches that filter'}>

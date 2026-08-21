@@ -13,18 +13,23 @@ import type { PartialEvaluation } from '../lib/partial-json';
 import {
   Alert,
   CharCounter,
+  CopyButton,
   DifficultyBadge,
   EmptyState,
+  KeyHint,
   LiveEvaluation,
   Panel,
   PathChip,
   RevisionTimeline,
   RubricBreakdown,
   ScoreRing,
+  SkeletonPage,
   Spinner,
   StatusBadge,
   relativeTime,
 } from '../components/ui';
+import { useEscapeToGoBack, useSubmitHotkey } from '../hooks/useHotkeys';
+import { feedbackToText } from '../lib/feedback-text';
 import { PASSING_SCORE, effectiveWeights } from '../data/rubric';
 import type { Submission } from '../types';
 
@@ -82,24 +87,34 @@ export default function ExerciseWorkspace() {
 
   useEffect(() => () => abortRef.current?.abort(), []);
 
-  if (!session) return <Navigate to="/signin" replace />;
-
-  // The lock is derived from submissions and the exercise list is fetched, so
-  // neither is meaningful until both have loaded — checking early would bounce
-  // a deep link to a custom or newly unlocked exercise.
-  if (loading || exercisesLoading) return <div className="h-96 animate-pulse rounded-xl bg-ink-100" />;
-  if (!exercise) return <Navigate to="/" replace />;
-  if (entry?.state === 'locked') return <Navigate to="/" replace />;
-
   const state = entry?.state ?? 'available';
   // A queued attempt is submitted work that has not reached the server yet, so
   // the editor locks the same way an in-review one does. Letting a student
   // rewrite a prompt that is already on its way would grade text they can no
   // longer see.
-  const queuedHere = pending.find((p) => p.submission.exerciseId === exercise.id);
+  const queuedHere = pending.find((p) => p.submission.exerciseId === exerciseId);
   const readOnly = state === 'in_review' || state === 'approved' || Boolean(queuedHere);
   const reflectionShort = reflection.trim().length < MIN_REFLECTION;
   const canSubmit = prompt.trim().length > 0 && !reflectionShort && !submitting && !running;
+
+  // Bound to the same condition as the button, so the shortcut can never do
+  // something the button would refuse. `handleSubmit` is a hoisted function
+  // declaration, which is why it can be named above where it is written.
+  useSubmitHotkey(() => void handleSubmit(), canSubmit && !readOnly);
+  // Escape leaves only when leaving costs nothing. A prompt in the editor is
+  // unsaved work that does not survive unmounting, so while there is one the
+  // shortcut is inert — see useEscapeToGoBack.
+  useEscapeToGoBack('/', readOnly || (!prompt.trim() && !reflection.trim()));
+
+  if (!session) return <Navigate to="/signin" replace />;
+
+  // The lock is derived from submissions and the exercise list is fetched, so
+  // neither is meaningful until both have loaded — checking early would bounce
+  // a deep link to a custom or newly unlocked exercise.
+  if (loading || exercisesLoading) return <SkeletonPage panels={3} />;
+  if (!exercise) return <Navigate to="/" replace />;
+  if (entry?.state === 'locked') return <Navigate to="/" replace />;
+
   const weights = effectiveWeights(exercise.rubricWeights);
 
   async function handleTestRun() {
@@ -410,7 +425,13 @@ export default function ExerciseWorkspace() {
                   ? t('workspace.fromLatestRun')
                   : undefined
             }
-            action={running ? <Spinner className="h-4 w-4 text-indigo-500" /> : undefined}
+            action={
+              running ? (
+                <Spinner className="h-4 w-4 text-indigo-500" />
+              ) : output ? (
+                <CopyButton text={() => output} label={t('common.copyOutput')} />
+              ) : undefined
+            }
           >
             {output || running ? (
               <pre className="scroll-slim prose-output max-h-[28rem] overflow-auto rounded-lg bg-ink-50 p-4 text-ink-800">
@@ -472,6 +493,7 @@ export default function ExerciseWorkspace() {
                         n: (entry?.attempts.length ?? 0) + 1,
                       })}
                 </button>
+                {!submitting && canSubmit && <KeyHint keys="submit" />}
                 {stage && !partial && <span className="text-sm text-ink-500">{stage}</span>}
                 {!submitting && (
                   <span className="hint">
@@ -495,7 +517,7 @@ export default function ExerciseWorkspace() {
                 />
                 <div className="space-y-4">
                   {attempts.map((a) => (
-                    <AttemptCard key={a.id} submission={a} />
+                    <AttemptCard key={a.id} submission={a} exerciseTitle={exercise.title} />
                   ))}
                 </div>
               </div>
@@ -575,7 +597,13 @@ function ExampleCard({ tone, title, text }: { tone: 'good' | 'bad'; title: strin
   );
 }
 
-function AttemptCard({ submission }: { submission: Submission }) {
+function AttemptCard({
+  submission,
+  exerciseTitle,
+}: {
+  submission: Submission;
+  exerciseTitle: string;
+}) {
   const { t } = useLocale();
   const [open, setOpen] = useState(false);
   const score = submission.review?.finalScore ?? submission.evaluation?.weightedTotal ?? 0;
@@ -609,7 +637,16 @@ function AttemptCard({ submission }: { submission: Submission }) {
 
           {submission.evaluation && (
             <>
-              <p className="text-sm leading-relaxed text-ink-700">{submission.evaluation.summary}</p>
+              <div className="flex items-start justify-between gap-3">
+                <p className="text-sm leading-relaxed text-ink-700">
+                  {submission.evaluation.summary}
+                </p>
+                <CopyButton
+                  className="btn-secondary shrink-0 px-2 py-1 text-xs"
+                  label={t('common.copyFeedback')}
+                  text={() => feedbackToText(submission, { exerciseTitle, t })}
+                />
+              </div>
               <RubricBreakdown
                 scores={submission.evaluation.scores}
                 overrides={submission.review?.overrides}
@@ -653,13 +690,19 @@ function AttemptCard({ submission }: { submission: Submission }) {
             </summary>
             <div className="space-y-3 border-t border-ink-200 px-3.5 py-3">
               <div>
-                <p className="hint mb-1 font-medium">{t('workspace.prompt')}</p>
+                <div className="mb-1 flex items-center justify-between gap-2">
+                  <p className="hint font-medium">{t('workspace.prompt')}</p>
+                  <CopyButton text={() => submission.prompt} />
+                </div>
                 <pre className="prose-output rounded bg-white p-3 font-mono text-ink-700">
                   {submission.prompt}
                 </pre>
               </div>
               <div>
-                <p className="hint mb-1 font-medium">{t('workspace.output')}</p>
+                <div className="mb-1 flex items-center justify-between gap-2">
+                  <p className="hint font-medium">{t('workspace.output')}</p>
+                  {submission.output && <CopyButton text={() => submission.output} />}
+                </div>
                 <pre className="prose-output scroll-slim max-h-72 overflow-auto rounded bg-white p-3 text-ink-700">
                   {submission.output || t('workspace.noneCaptured')}
                 </pre>

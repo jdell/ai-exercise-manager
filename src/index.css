@@ -269,6 +269,16 @@
   .animate-in {
     animation: none;
   }
+
+  /*
+   * Skeletons still need to read as "not the real thing", so the pulse is
+   * flattened to a static tint rather than removed — a grey block that never
+   * moves and never changes is indistinguishable from a broken layout.
+   */
+  .animate-pulse {
+    animation: none;
+    opacity: 0.7;
+  }
 }
 
 /*
