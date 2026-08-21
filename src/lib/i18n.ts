@@ -1010,8 +1010,8 @@ const ES: Record<MessageKey, string> = {
     'Avanza por los ejercicios, recibe la puntuación de Claude y desbloquea el siguiente.',
   'auth.roleTeacherBlurb':
     'Revisa las puntuaciones de Claude, corrígelas cuando no estés de acuerdo y aprueba el avance.',
-  'auth.teacherCodeLabel': 'Código de acceso docente',
-  'auth.teacherCodeHint': 'Contacta con tu administrador si no tienes código.',
+  'auth.teacherCodeLabel': 'Código de acceso para maestros',
+  'auth.teacherCodeHint': 'Contacta a tu administrador si no tienes un código.',
   'auth.googleAsRole': 'Continuar con Google como {role}',
   'auth.needsCode': 'Introduce el código de acceso para continuar como docente.',
   'auth.orSignUpEmail': 'o regístrate con correo',
