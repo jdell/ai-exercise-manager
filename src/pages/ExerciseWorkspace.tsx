@@ -724,7 +724,7 @@ export function FeedbackList({
   items: string[];
   tone: 'emerald' | 'amber';
 }) {
-  if (!items.length) return null;
+  if (!items?.length) return null;
   const dot = tone === 'emerald' ? 'bg-emerald-500' : 'bg-amber-500';
   return (
     <div>

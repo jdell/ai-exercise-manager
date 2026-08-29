@@ -1,6 +1,7 @@
 import { getDatabase } from 'firebase-admin/database';
 import { HttpsError, type CallableRequest } from 'firebase-functions/v2/https';
 import { EXERCISE_BY_ID } from '../../src/data/exercises';
+import { reviveExercise, reviveSubmission } from '../../src/lib/revive';
 import type { Exercise, Role, Submission, UserProfile } from '../../src/types';
 
 /** Small shared checks. Every callable starts by running these. */
@@ -40,7 +41,10 @@ export async function exerciseOf(exerciseId: string): Promise<Exercise> {
 
   const snap = await db().ref(`exercises/${exerciseId}`).get();
   if (!snap.exists()) throw new HttpsError('not-found', 'That exercise does not exist.');
-  return snap.val() as Exercise;
+  // Custom exercises make the round trip through the database, which drops the
+  // empty arrays the builder writes — see lib/revive.ts. The evaluator prompt
+  // maps over successCriteria unconditionally.
+  return reviveExercise(snap.val() as Exercise);
 }
 
 export async function profileOf(uid: string): Promise<UserProfile | null> {
@@ -65,6 +69,7 @@ export async function priorAttempts(submission: Submission): Promise<Submission[
     .get();
 
   return Object.values((snap.val() ?? {}) as Record<string, Submission>)
+    .map(reviveSubmission)
     .filter(
       (s) =>
         s.exerciseId === submission.exerciseId &&

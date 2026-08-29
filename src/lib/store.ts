@@ -1,5 +1,6 @@
 import { equalTo, onValue, orderByChild, query, ref, remove, set, update } from 'firebase/database';
 import { getDb } from './firebase';
+import { reviveExercise, reviveSubmission } from './revive';
 import type { ClassGroup, Exercise, Role, Submission, UserProfile } from '../types';
 
 /**
@@ -55,7 +56,7 @@ export function subscribeSubmissions(
 
   return onValue(
     target,
-    (snap) => cb(recordToList<Submission>(snap.val())),
+    (snap) => cb(recordToList<Submission>(snap.val()).map(reviveSubmission)),
     (err) => onError?.(err),
   );
 }
@@ -141,7 +142,7 @@ export function subscribeExercises(
   }
   return onValue(
     ref(db, 'exercises'),
-    (snap) => cb(recordToList<Exercise>(snap.val())),
+    (snap) => cb(recordToList<Exercise>(snap.val()).map(reviveExercise)),
     (err) => onError?.(err),
   );
 }

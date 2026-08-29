@@ -286,7 +286,7 @@ export function checkIntegrity(
 
 /** The loudest severity present, for badge colouring. */
 export function peakSeverity(report: IntegrityReport | undefined): IntegrityFlag['severity'] | null {
-  if (!report?.flags.length) return null;
+  if (!report?.flags?.length) return null;
   if (report.flags.some((f) => f.severity === 'high')) return 'high';
   if (report.flags.some((f) => f.severity === 'warn')) return 'warn';
   return 'info';

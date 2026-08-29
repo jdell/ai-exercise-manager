@@ -1102,11 +1102,12 @@ export function IntegrityBadge({ report }: { report?: IntegrityReport }) {
   const severity = peakSeverity(report);
   if (!severity || !report) return null;
   const { className } = SEVERITY_STYLES[severity];
-  const count = report.flags.length;
+  const flags = report.flags ?? [];
+  const count = flags.length;
   return (
     <span
       className={`inline-flex items-center gap-1 rounded-full border px-2 py-0.5 text-xs font-medium ${className}`}
-      title={report.flags.map((f) => INTEGRITY_LABELS[f.code]).join(' · ')}
+      title={flags.map((f) => INTEGRITY_LABELS[f.code]).join(' · ')}
     >
       {count} {count === 1 ? 'signal' : 'signals'}
     </span>
@@ -1118,7 +1119,7 @@ export function IntegrityBadge({ report }: { report?: IntegrityReport }) {
  * heuristics, and a teacher who reads them as accusations will use them badly.
  */
 export function IntegrityPanel({ report }: { report?: IntegrityReport }) {
-  if (!report || (!report.flags.length && !report.modelSuspects)) return null;
+  if (!report || (!report.flags?.length && !report.modelSuspects)) return null;
 
   return (
     <div className="space-y-3">
@@ -1138,7 +1139,7 @@ export function IntegrityPanel({ report }: { report?: IntegrityReport }) {
       )}
 
       <ul className="space-y-2">
-        {report.flags.map((flag) => (
+        {(report.flags ?? []).map((flag) => (
           <li
             key={`${flag.code}-${flag.detail}`}
             className="rounded-lg border border-ink-200 px-3.5 py-3"
