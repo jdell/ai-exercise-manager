@@ -620,6 +620,22 @@ only — the built-in nine are compiled in and must never be written there),
 `/rateLimits` (playground quota counters, written only by the function; it has
 no rule at all, so the root default denies every client).
 
+"Must never be written there" is now enforced rather than trusted: the rules
+require a key under `/exercises` to match `ex_<something>`, which is the shape
+`newId('ex')` mints and which no built-in id has. So the prefix passed to
+`newId()` in the exercise builder is load-bearing — change it and every save
+starts failing on a permission error. The alternative was listing the nine
+built-in ids in `database.rules.json`, which is the second copy of the exercise
+list that rule 6a exists to prevent.
+
+The rules are **not** deployed by CI — `.github/workflows/deploy.yml` ships
+hosting only, deliberately. `database.rules.json` and the rules actually
+guarding the database are therefore two different things, and only
+`npm run deploy:rules` (or a full `npm run deploy`) reconciles them. A Firebase
+warning that any signed-in user can read or write the whole database means that
+deploy has not been run, not that this file regressed — the root default here
+is `false`, and every path is granted from there.
+
 ## Security posture
 
 Phase 2 closed the two holes that used to be documented here: the API key is no
@@ -639,9 +655,11 @@ worth knowing:
    user per rolling hour, 8k characters of prompt and 8k of material, enforced
    server-side. It is the widest surface in the app; do not widen it further
    without moving the counter with it. See rule 10.
-4. **`/exercises` is read-only for authenticated users and unused.** The built-in
-   exercises ship in the bundle (`src/data/exercises.ts`); the node exists so
-   that a mirrored copy could never be written by a client.
+4. **`/exercises` is readable by any signed-in user and writable only by
+   teachers.** The built-in exercises ship in the bundle
+   (`src/data/exercises.ts`) and cannot be written over: the node holds
+   teacher-authored exercises only, and the `ex_` key shape is what keeps a
+   custom record from shadowing a built-in one for the whole school.
 
 ## Build notes
 

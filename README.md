@@ -202,8 +202,17 @@ first thing you do each session.
 ### Manual
 
 ```bash
-npm run deploy   # hosting + functions + database rules
+npm run deploy         # hosting + functions + database rules
+npm run deploy:rules   # database rules alone, after editing database.rules.json
 ```
+
+> **Edited `database.rules.json`? It is not live until you deploy it.**
+> Nothing in CI ships rules, so the file in this repo and the rules protecting
+> the database are two different things that can silently disagree. If Firebase
+> emails you that "any logged-in user can read or write your entire database",
+> that is this gap, not a hole in the file: the database is still on the default
+> rules it was created with. `npm run deploy:rules` closes it, and the Firebase
+> console's **Realtime Database → Rules** tab shows what is actually live.
 
 ### GitHub Actions
 

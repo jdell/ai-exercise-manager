@@ -9,7 +9,7 @@
 
       "$uid": {
         ".read": "auth != null && auth.uid === $uid",
-        ".write": "auth != null && auth.uid === $uid && data.exists() && newData.exists() && newData.child('role').val() === data.child('role').val() && newData.child('uid').val() === data.child('uid').val() && newData.child('createdAt').val() === data.child('createdAt').val()",
+        ".write": "auth != null && auth.uid === $uid && data.exists() && newData.exists() && newData.child('role').val() === data.child('role').val() && newData.child('uid').val() === data.child('uid').val() && newData.child('createdAt').val() === data.child('createdAt').val() && newData.child('email').val() === data.child('email').val()",
         ".validate": "newData.hasChildren(['uid', 'email', 'displayName', 'role', 'createdAt'])",
 
         "uid": { ".validate": "newData.val() === $uid" },
@@ -57,12 +57,35 @@
 
       "$exerciseId": {
         ".write": "auth != null && root.child('users').child(auth.uid).child('role').val() === 'teacher'",
-        ".validate": "!newData.exists() || newData.hasChildren(['id', 'title', 'task', 'order', 'pathId'])",
+
+        // The id shape is the guard rather than a copy of the built-in list:
+        // the builder mints ex_<id> via newId('ex') and the built-in nine are
+        // kebab slugs. Enumerating those nine here would be a second copy that
+        // drifts, and a teacher who overwrote one would silently replace
+        // compiled-in course content for every class. Deletes skip .validate,
+        // so a stray legacy record can still be cleared.
+        ".validate": "!newData.exists() || (newData.hasChildren(['id', 'title', 'task', 'order', 'pathId', 'source']) && $exerciseId.matches(/^ex_[a-zA-Z0-9]+$/))",
 
         "id": { ".validate": "newData.val() === $exerciseId" },
-        "title": { ".validate": "newData.isString() && newData.val().length <= 120" },
+        "title": { ".validate": "newData.isString() && newData.val().length > 0 && newData.val().length <= 120" },
         "task": { ".validate": "newData.isString() && newData.val().length <= 8000" },
         "brief": { ".validate": "newData.isString() && newData.val().length <= 8000" },
+        "tagline": { ".validate": "newData.isString() && newData.val().length <= 200" },
+        "topic": { ".validate": "newData.isString() && newData.val().length <= 80" },
+        "evaluatorNotes": { ".validate": "newData.isString() && newData.val().length <= 8000" },
+        "starterPrompt": { ".validate": "newData.isString() && newData.val().length <= 20000" },
+        "order": { ".validate": "newData.isNumber() && newData.val() >= 1" },
+        "estimatedMinutes": { ".validate": "newData.isNumber() && newData.val() >= 1" },
+        "maxPromptChars": { ".validate": "newData.isNumber() && newData.val() >= 0" },
+        "pathId": {
+          ".validate": "newData.val() === 'fundamentals' || newData.val() === 'advanced' || newData.val() === 'domain'"
+        },
+        "difficulty": {
+          ".validate": "newData.val() === 'intro' || newData.val() === 'core' || newData.val() === 'advanced'"
+        },
+        "createdAt": { ".validate": "newData.isNumber()" },
+        "updatedAt": { ".validate": "newData.isNumber()" },
+        "createdBy": { ".validate": "newData.isString() && newData.val().length <= 80" },
         "source": { ".validate": "newData.val() === 'custom'" }
       }
     },
