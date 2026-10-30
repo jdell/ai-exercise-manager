@@ -10,7 +10,12 @@
     "postinstall": "prisma generate",
     "db:push": "prisma db push",
     "db:generate": "prisma generate",
-    "typecheck": "tsc --noEmit"
+    "typecheck": "tsc --noEmit",
+    "db:start": "supabase start",
+    "db:stop": "supabase stop",
+    "db:reset": "supabase db reset",
+    "db:studio": "prisma studio",
+    "db:seed": "node scripts/seed-local.mjs"
   },
   "dependencies": {
     "@prisma/adapter-pg": "^7.10.1",
@@ -32,7 +37,9 @@
     "dotenv": "^18.0.9",
     "eslint": "^9",
     "eslint-config-next": "16.4.3",
+    "pg": "^8.23.1",
     "prisma": "^7.10.1",
+    "supabase": "^2.122.0",
     "tailwindcss": "^4",
     "typescript": "^5"
   }

@@ -1,5 +1,6 @@
 import { cache } from "react";
 import { redirect } from "next/navigation";
+import { connection } from "next/server";
 import type { MembershipRole } from "@/generated/prisma/enums";
 import { prisma } from "@/lib/prisma";
 import { STAFF_ROLES } from "@/lib/constants";
@@ -7,6 +8,9 @@ import { createClient } from "@/lib/supabase/server";
 
 /** The signed-in Supabase user, or null. Cached per request. */
 export const getAuthUser = cache(async () => {
+  // supabase-js checks token expiry with Date.now(); mark the render as
+  // request-time first or Cache Components rejects it during prerendering.
+  await connection();
   const supabase = await createClient();
   const {
     data: { user },

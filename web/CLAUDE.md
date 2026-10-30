@@ -69,7 +69,8 @@ Vercel routes env vars by target: `production` vars go to `main` deploys; `previ
 
 **Always apply changes to staging before production.**
 
-1. Point `DIRECT_URL` at staging and run `npm run db:push`
+1. Test locally first (see Local development), then point `DIRECT_URL` at staging and run
+   `npm run db:push`
 2. For SQL that Prisma can't express (RLS, functions, triggers): add a file to
    `supabase/migrations/` named `YYYYMMDDHHMMSS_description.sql`
 3. Apply the same SQL to production only after staging is verified
@@ -79,6 +80,39 @@ Prisma 7 notes: the datasource URL lives in `prisma.config.ts`, not in `schema.p
 `prisma generate` works without a database. The client is generated into `src/generated/prisma`
 (gitignored, rebuilt on `postinstall`) and connects through `@prisma/adapter-pg`.
 
+## Local development
+
+Local Supabase runs in Docker via the Supabase CLI (a dev dependency; config in `supabase/config.toml`).
+Docker must be running.
+
+```bash
+cp .env.example .env.local   # already holds the local Supabase values
+npx supabase start           # or: npm run db:start — first run pulls the images
+npx prisma db push           # or: npm run db:push — creates the tables
+npm run db:seed              # optional: tenant, teacher, candidate and an assessment
+npm run dev                  # http://localhost:3000
+```
+
+| Service | URL |
+|---|---|
+| API (Auth, REST) | http://localhost:54321 |
+| Postgres | `postgresql://postgres:postgres@localhost:54322/postgres` |
+| Studio | http://localhost:54323 |
+| Mailpit (magic-link emails) | http://localhost:54324 |
+
+- `npm run db:seed` creates `teacher@example.test` (staff) and `candidate@example.test`; the
+  password is in `scripts/seed-local.mjs`. The script refuses to run unless both Supabase and
+  the database are on localhost.
+- The keys in `.env.example` are the Supabase CLI's public demo keys and only work locally.
+- **Tables come from Prisma, not `supabase/migrations/`.** `npm run db:reset` wipes the
+  database and reapplies only Supabase migrations, so run `npm run db:push` (and `db:seed`)
+  again afterwards.
+- **Only one local Supabase stack can hold the default ports (54321–54324).** If another
+  project's stack is running, `supabase start` fails on a port clash — stop it from that
+  project's folder with `npx supabase stop` first.
+- `prisma.config.ts` loads `.env.local` then `.env`, so the Prisma CLI and `npm run dev` hit
+  the same database.
+
 ## Key commands
 
 ```bash
@@ -86,8 +120,13 @@ npm run dev            # local development
 npm run build          # verify the build passes before pushing
 npm run lint           # ESLint
 npm run typecheck      # tsc --noEmit
+npm run db:start       # start local Supabase (Docker)
+npm run db:stop        # stop it (data is kept)
+npm run db:reset       # wipe the local database — then db:push again
+npm run db:push        # sync the Prisma schema (uses DIRECT_URL, else DATABASE_URL)
+npm run db:seed        # seed local test data (localhost only)
+npm run db:studio      # Prisma Studio
 npm run db:generate    # regenerate the Prisma client
-npm run db:push        # sync the Prisma schema (uses DIRECT_URL)
 ```
 
 ## Roadmap (next steps)

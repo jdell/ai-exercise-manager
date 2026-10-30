@@ -11,25 +11,29 @@ root is unaffected. Run every command from this directory.
 
 ## Getting started
 
+Needs Node 22 and Docker (for local Supabase).
+
 ```bash
 cd web
-cp .env.example .env.local   # Next.js
-cp .env.example .env         # Prisma CLI
-# fill in the Supabase and database values in both
-
 npm install                  # also runs `prisma generate`
-npm run db:push              # create the tables (point DIRECT_URL at a dev/staging database)
+cp .env.example .env.local   # local Supabase values are already filled in
+npm run db:start             # local Supabase in Docker
+npm run db:push              # create the tables
+npm run db:seed              # optional test data
 npm run dev
 ```
 
-Open <http://localhost:3000>. To sign in to the staff area you need a Supabase auth user, a
-matching row in `users` (same `id`) and a `tenant_memberships` row with role `ADMIN` or `TEACHER`.
+Open <http://localhost:3000> and sign in as `teacher@example.test` (staff area) or
+`candidate@example.test` (the assessment link printed by `db:seed`). The test password is in
+`scripts/seed-local.mjs`. See [CLAUDE.md](CLAUDE.md#local-development) for local URLs and caveats.
 
 ## Structure
 
 ```
 prisma/schema.prisma         Tenant, User, TenantMembership, Exercise, ExerciseSet(+Item),
                              Assessment, Submission, Score, Report
+supabase/config.toml         Local Supabase stack (Supabase CLI)
+scripts/seed-local.mjs       Local test data
 src/proxy.ts                 Session refresh + redirect for protected routes
 src/lib/
   auth.ts                    requireUser / requireStaff / requireCandidateAssessment
