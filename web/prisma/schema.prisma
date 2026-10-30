@@ -1,0 +1,239 @@
+// Prompt Class — multi-tenant platform for assessing how engineers work with AI.
+//
+// Every tenant-owned row carries `tenantId` so that queries and RLS policies can
+// scope by tenant without joins. Users are global (one Supabase auth identity)
+// and belong to tenants through TenantMembership.
+
+generator client {
+  provider = "prisma-client"
+  output   = "../src/generated/prisma"
+}
+
+datasource db {
+  provider = "postgresql"
+}
+
+// ─── Enums ──────────────────────────────────────────────────────────────────
+
+enum MembershipRole {
+  ADMIN
+  TEACHER
+  CANDIDATE
+}
+
+enum ExerciseType {
+  MIGRATION
+  DEBUGGING
+  ARCHITECTURE
+  CODE_REVIEW
+  SYSTEM_PROMPT
+  LIVE_CODING
+  GREENFIELD
+  DATA_ANALYSIS
+  DEVOPS
+}
+
+enum Difficulty {
+  JUNIOR
+  MID
+  SENIOR
+  LEAD
+}
+
+enum AssessmentStatus {
+  INVITED
+  IN_PROGRESS
+  SUBMITTED
+  SCORED
+}
+
+// ─── Tenancy & identity ─────────────────────────────────────────────────────
+
+model Tenant {
+  id        String   @id @default(uuid()) @db.Uuid
+  name      String
+  slug      String   @unique
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt @map("updated_at")
+
+  memberships  TenantMembership[]
+  exercises    Exercise[]
+  exerciseSets ExerciseSet[]
+  assessments  Assessment[]
+
+  @@map("tenants")
+}
+
+/// `id` matches the Supabase `auth.users.id` of the same person.
+model User {
+  id        String   @id @db.Uuid
+  email     String   @unique
+  fullName  String?  @map("full_name")
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt @map("updated_at")
+
+  memberships        TenantMembership[]
+  exercisesCreated   Exercise[]         @relation("ExerciseAuthor")
+  assessmentsTaken   Assessment[]       @relation("AssessmentCandidate")
+  assessmentsInvited Assessment[]       @relation("AssessmentInviter")
+  scoresGiven        Score[]            @relation("ScoreReviewer")
+
+  @@map("users")
+}
+
+model TenantMembership {
+  id        String         @id @default(uuid()) @db.Uuid
+  tenantId  String         @map("tenant_id") @db.Uuid
+  userId    String         @map("user_id") @db.Uuid
+  role      MembershipRole
+  createdAt DateTime       @default(now()) @map("created_at")
+
+  tenant Tenant @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  user   User   @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([tenantId, userId])
+  @@index([userId])
+  @@map("tenant_memberships")
+}
+
+// ─── Exercise library ───────────────────────────────────────────────────────
+
+model Exercise {
+  id               String       @id @default(uuid()) @db.Uuid
+  tenantId         String       @map("tenant_id") @db.Uuid
+  createdById      String?      @map("created_by_id") @db.Uuid
+  title            String
+  /// Markdown brief shown to the candidate.
+  brief            String
+  type             ExerciseType
+  difficulty       Difficulty
+  /// Starting material: code, logs, a schema or a dataset excerpt.
+  starterContent   String?      @map("starter_content")
+  /// Scoring rubric: `[{ dimension, weight, description }]`.
+  rubric           Json         @default("[]")
+  timeLimitMinutes Int?         @map("time_limit_minutes")
+  isPublished      Boolean      @default(false) @map("is_published")
+  createdAt        DateTime     @default(now()) @map("created_at")
+  updatedAt        DateTime     @updatedAt @map("updated_at")
+
+  tenant      Tenant            @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  createdBy   User?             @relation("ExerciseAuthor", fields: [createdById], references: [id], onDelete: SetNull)
+  setItems    ExerciseSetItem[]
+  submissions Submission[]
+
+  @@index([tenantId, type])
+  @@index([tenantId, difficulty])
+  @@map("exercises")
+}
+
+model ExerciseSet {
+  id          String   @id @default(uuid()) @db.Uuid
+  tenantId    String   @map("tenant_id") @db.Uuid
+  name        String
+  description String?
+  createdAt   DateTime @default(now()) @map("created_at")
+  updatedAt   DateTime @updatedAt @map("updated_at")
+
+  tenant      Tenant            @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  items       ExerciseSetItem[]
+  assessments Assessment[]
+
+  @@index([tenantId])
+  @@map("exercise_sets")
+}
+
+/// Join table: which exercises are in a set, and in what order.
+model ExerciseSetItem {
+  exerciseSetId String @map("exercise_set_id") @db.Uuid
+  exerciseId    String @map("exercise_id") @db.Uuid
+  position      Int
+
+  exerciseSet ExerciseSet @relation(fields: [exerciseSetId], references: [id], onDelete: Cascade)
+  exercise    Exercise    @relation(fields: [exerciseId], references: [id], onDelete: Cascade)
+
+  @@id([exerciseSetId, exerciseId])
+  @@unique([exerciseSetId, position])
+  @@map("exercise_set_items")
+}
+
+// ─── Assessments ────────────────────────────────────────────────────────────
+
+model Assessment {
+  id            String           @id @default(uuid()) @db.Uuid
+  tenantId      String           @map("tenant_id") @db.Uuid
+  exerciseSetId String           @map("exercise_set_id") @db.Uuid
+  candidateId   String           @map("candidate_id") @db.Uuid
+  invitedById   String?          @map("invited_by_id") @db.Uuid
+  status        AssessmentStatus @default(INVITED)
+  dueAt         DateTime?        @map("due_at")
+  invitedAt     DateTime         @default(now()) @map("invited_at")
+  startedAt     DateTime?        @map("started_at")
+  submittedAt   DateTime?        @map("submitted_at")
+  scoredAt      DateTime?        @map("scored_at")
+
+  tenant      Tenant       @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  exerciseSet ExerciseSet  @relation(fields: [exerciseSetId], references: [id], onDelete: Restrict)
+  candidate   User         @relation("AssessmentCandidate", fields: [candidateId], references: [id], onDelete: Cascade)
+  invitedBy   User?        @relation("AssessmentInviter", fields: [invitedById], references: [id], onDelete: SetNull)
+  submissions Submission[]
+  report      Report?
+
+  @@index([tenantId, status])
+  @@index([candidateId])
+  @@map("assessments")
+}
+
+model Submission {
+  id            String    @id @default(uuid()) @db.Uuid
+  assessmentId  String    @map("assessment_id") @db.Uuid
+  exerciseId    String    @map("exercise_id") @db.Uuid
+  /// Every prompt/response turn: `[{ role, content, at }]`.
+  promptHistory Json      @default("[]") @map("prompt_history")
+  finalAnswer   String?   @map("final_answer")
+  /// Candidate's own account of their approach.
+  reflection    String?
+  createdAt     DateTime  @default(now()) @map("created_at")
+  submittedAt   DateTime? @map("submitted_at")
+
+  assessment Assessment @relation(fields: [assessmentId], references: [id], onDelete: Cascade)
+  exercise   Exercise   @relation(fields: [exerciseId], references: [id], onDelete: Restrict)
+  score      Score?
+
+  @@unique([assessmentId, exerciseId])
+  @@map("submissions")
+}
+
+model Score {
+  id           String   @id @default(uuid()) @db.Uuid
+  submissionId String   @unique @map("submission_id") @db.Uuid
+  /// Per-dimension results: `[{ dimension, score, maxScore, rationale }]`.
+  dimensions   Json     @default("[]")
+  total        Float
+  maxTotal     Float    @map("max_total")
+  feedback     String?
+  /// True when produced by the model; false once a teacher overrides it.
+  isAutomated  Boolean  @default(true) @map("is_automated")
+  reviewedById String?  @map("reviewed_by_id") @db.Uuid
+  createdAt    DateTime @default(now()) @map("created_at")
+  updatedAt    DateTime @updatedAt @map("updated_at")
+
+  submission Submission @relation(fields: [submissionId], references: [id], onDelete: Cascade)
+  reviewedBy User?      @relation("ScoreReviewer", fields: [reviewedById], references: [id], onDelete: SetNull)
+
+  @@map("scores")
+}
+
+model Report {
+  id             String   @id @default(uuid()) @db.Uuid
+  assessmentId   String   @unique @map("assessment_id") @db.Uuid
+  summary        String
+  strengths      String[]
+  improvements   String[]
+  overallScore   Float    @map("overall_score")
+  recommendation String?
+  generatedAt    DateTime @default(now()) @map("generated_at")
+
+  assessment Assessment @relation(fields: [assessmentId], references: [id], onDelete: Cascade)
+
+  @@map("reports")
+}

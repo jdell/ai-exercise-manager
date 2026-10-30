@@ -57,6 +57,14 @@ Three things have been true since phase 1 and are the spine of everything above:
 it are computed on read, never stored**, and **a teacher decides**. A change that
 weakens one of those is a change to the pedagogy, not to the code.
 
+## `web/` — Prompt Class (Next.js)
+
+`web/` holds **Prompt Class**, a separate multi-tenant Next.js 16 + Supabase + Prisma app for
+assessing how engineers work with AI. It has its own `package.json`, auth, database and
+[CLAUDE.md](web/CLAUDE.md); nothing in it is imported by the Vite app, and nothing at the root
+(`npm run lint`, `tsc -b`, the Firebase deploy) touches it. When working in `web/`, follow
+`web/CLAUDE.md` and run commands from that directory.
+
 ## Stack
 
 - **React 19 + TypeScript**, Vite 7, Tailwind CSS v4 (`@tailwindcss/vite`), React Router 7

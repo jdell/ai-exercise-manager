@@ -335,6 +335,13 @@ npm run preview    # serve the built bundle
 npm run deploy     # build + firebase deploy
 ```
 
+## Prompt Class (`web/`)
+
+`web/` contains **Prompt Class**, a separate multi-tenant Next.js 16 + Supabase + Prisma app
+for assessing how engineers work with AI: exercise libraries, candidate assessments, recorded
+prompt histories and rubric scoring. It is self-contained and does not affect the app above.
+See [web/README.md](web/README.md) to run it.
+
 ## Licence
 
 MIT
