@@ -2,6 +2,10 @@
 
 Guidance for Claude Code when working in this repository.
 
+**`prompt-class/` is a separate app** (Prompt Class, Next.js + Supabase) with
+its own `CLAUDE.md`. Everything below is about the Vite app at the root;
+neither app imports from the other.
+
 ## What this is
 
 A classroom app for teaching prompt engineering. Students work through a locked

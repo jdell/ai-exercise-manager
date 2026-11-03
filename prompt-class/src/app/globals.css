@@ -1,0 +1,78 @@
+@import "tailwindcss";
+
+/*
+ * Design tokens. Components use the token utilities (`bg-card`, `text-muted`,
+ * `border-line`, `bg-accent`…) — never raw Tailwind greys or `dark:` colour
+ * variants, because the tokens already flip for dark mode.
+ */
+:root {
+  --bg: #f6f7f9;
+  --card: #ffffff;
+  --ink: #14181f;
+  --muted: #5d6673;
+  --line: #e1e5eb;
+  --soft: #eef1f5;
+  --accent: #4338ca;
+  --accent-ink: #ffffff;
+  --accent-soft: #eef0ff;
+  --ok: #15803d;
+  --warn: #b45309;
+}
+
+@media (prefers-color-scheme: dark) {
+  :root {
+    --bg: #0e1116;
+    --card: #161a21;
+    --ink: #e8ebf0;
+    --muted: #9aa3b0;
+    --line: #2a303a;
+    --soft: #1d222b;
+    --accent: #818cf8;
+    --accent-ink: #0e1116;
+    --accent-soft: #23264a;
+    --ok: #4ade80;
+    --warn: #fbbf24;
+  }
+}
+
+@theme inline {
+  --color-bg: var(--bg);
+  --color-card: var(--card);
+  --color-ink: var(--ink);
+  --color-muted: var(--muted);
+  --color-line: var(--line);
+  --color-soft: var(--soft);
+  --color-accent: var(--accent);
+  --color-accent-ink: var(--accent-ink);
+  --color-accent-soft: var(--accent-soft);
+  --color-ok: var(--ok);
+  --color-warn: var(--warn);
+  --font-sans: var(--font-inter);
+  --font-mono: var(--font-jetbrains);
+}
+
+body {
+  background: var(--bg);
+  color: var(--ink);
+}
+
+@layer components {
+  /* Tailwind v4's @apply can't reference another custom class, so the shared
+     button base is a grouped selector. Add new variants to it. */
+  .btn-primary,
+  .btn-outline {
+    @apply inline-flex items-center justify-center gap-2 rounded-md px-4 py-2 text-sm font-medium transition-colors disabled:opacity-60;
+  }
+  .btn-primary {
+    @apply bg-accent text-accent-ink hover:opacity-90;
+  }
+  .btn-outline {
+    @apply border border-line bg-card text-ink hover:bg-soft;
+  }
+  .field {
+    @apply w-full rounded-md border border-line bg-card px-3 py-2 text-sm text-ink placeholder:text-muted focus:border-accent focus:outline-none;
+  }
+  .label {
+    @apply font-mono text-[11px] font-medium tracking-wider text-muted uppercase;
+  }
+}

@@ -8,6 +8,9 @@ seconds, and a teacher reviews every score before a student moves on.
   <em>React 19 · TypeScript · Vite · Tailwind v4 · Firebase Auth + Realtime Database + Cloud Functions · Claude Opus 5</em>
 </p>
 
+> **Also in this repo:** [`prompt-class/`](prompt-class/) is Prompt Class, a separate Next.js app for
+> assessing AI-enabled engineers. It has its own README, setup and deployment.
+
 ---
 
 ## How it works
